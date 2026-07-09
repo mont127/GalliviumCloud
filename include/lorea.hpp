@@ -106,6 +106,8 @@ public:
     std::optional<std::string> find_llama_server_bin();
     void  ensure_llamacpp_server();
     bool  llamacpp_health_ok(const std::string& host, int port);
+    std::optional<std::string> resolve_gguf_path(const std::string& name);
+    std::string                find_hf_repo_for_model(const std::string& name);
     void  ensure_local_server();
     std::pair<std::string, int> inference_hostport();
     void  kill_inference_procs_on_port(int port);
@@ -170,6 +172,7 @@ public:
     std::vector<Message> recent_context_slice();
     std::vector<Message> trim_recent_context(const std::vector<Message>& messages);
     int                estimate_context_tokens();
+    void               sync_context_budget();
     std::string        norm_tool_sig(const std::string& name, const json& args);
     std::string        fallback_compaction_summary(const std::vector<Message>& messages);
     std::string        request_compaction_summary(const std::vector<Message>& messages,
@@ -219,6 +222,7 @@ public:
     std::string                 url;
     bool                        planning_enabled = false;
     std::string                 effort_level = "basic";
+    int                         context_budget = COMPACT_TOKEN_BUDGET;
     std::vector<Task>           tasks;
     std::shared_ptr<Subprocess> active_process;
     int                         active_master = -1;

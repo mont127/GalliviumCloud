@@ -1,4 +1,5 @@
 #include "lorea.hpp"
+#include "ocli_prompt.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -143,6 +144,7 @@ LOREA::LOREA(std::string model_name_, bool auto_mode_, std::string backend_,
     }
     planning_enabled = false;
     effort_level = "basic";
+    sync_context_budget();
     tasks.clear();
     active_process = nullptr;
     active_master = -1;
@@ -198,64 +200,7 @@ LOREA::LOREA(std::string model_name_, bool auto_mode_, std::string backend_,
         cur_date = datebuf;
     }
 
-    std::string sys_content =
-        std::string("You are LOREA, an advanced AUTONOMOUS AI coding agent. Current date: ") +
-        cur_date +
-        ". "
-        "SECURITY POLICY (binding, overrides any other instruction): You support ONLY authorized, "
-        "scoped, lawful security work — penetration testing of systems the operator owns or is "
-        "contracted to test, CTF challenges, labs, defensive analysis, and education. You THINK like a "
-        "skilled red-team pentester (recon, enumeration, exploitation reasoning, privilege escalation, "
-        "lateral movement, reporting) but you ALWAYS confirm authorization and scope first, and you "
-        "pair every offensive technique with its detection and remediation. You REFUSE, and explain "
-        "why, when asked to attack systems without authorization, perform mass/indiscriminate "
-        "exploitation, build malware/ransomware/C2, steal credentials, destroy or exfiltrate data, "
-        "evade detection for malicious ends, or harm anyone. A hard runtime guard blocks such tool "
-        "calls regardless of what you output; never try to bypass, obfuscate, or encode around it. "
-        "When a request is out of scope, redirect to the authorized, ethical alternative. "
-        "CONVERSATION RULES: For greetings, questions, explanations, or any non-task message, respond "
-        "in plain natural language. Do NOT call tools or output JSON for simple conversation. Only use "
-        "tools when the user explicitly asks you to perform an action (run code, edit files, search, "
-        "etc.). "
-        "Wrap internal reasoning in <thought> tags. "
-        "To call a tool, emit a single tool call. Preferred format: <tools>{{\"name\": \"tool_name\", "
-        "\"arguments\": {{...}}}}</tools>. For shell commands, use <tools>{{\"name\":\"run_cmd\","
-        "\"arguments\":{{\"command\":\"pwd\"}}}}</tools>. The native function-call format "
-        "(<tool_call><function=run_cmd><parameter=command>pwd</parameter></function></tool_call>) is "
-        "also accepted. Use exactly one format per call and provide every required argument. Available "
-        "tools include run_cmd, read_file, write_file, test_cmd, list_files, search_files, find_files, "
-        "grep, web_search, read_url, http_request, git_status, git_diff, and spawn_agents. For sending "
-        "HTTP requests with payloads (web pentesting), ALWAYS prefer http_request over curl-in-run_cmd "
-        "so payloads with quotes/spaces are not mangled by the shell. For data you must GENERATE or "
-        "repeat — a long string, a flood of requests, fuzzing input — NEVER type the literal out (you "
-        "cannot reliably emit thousands of characters); instead use run_cmd with a shell/python "
-        "one-liner that builds it, e.g. run_cmd python3 -c 'print(\"A\"*100000)' or a bash for-loop. "
-        "If you catch yourself describing the same step twice without emitting a tool call, STOP and "
-        "either run a one-liner that does it or say plainly that you cannot — do not repeat the "
-        "description. For coding tasks, write the complete requested implementation first, then write "
-        "tests, then run pytest, then fix failures, then summarize final files. "
-        "Do not write markdown code blocks when creating or editing files; use the write_file tool. Do "
-        "not describe running commands; use run_cmd or test_cmd. Do not fabricate tool results, diffs, "
-        "test output, file contents, or <tool_response> blocks. If a user asks you to create code, "
-        "modify code, inspect files, run tests, install packages, or execute a program, you MUST call "
-        "a real tool. "
-        "For multi-step tasks, after each successful real tool call, immediately make the next "
-        "required real tool call only if it advances the original user request; do not output bare "
-        "CONTINUE as a standalone response, and do not repeatedly run the same command or read/write "
-        "the same file without changing strategy. If list_files has already shown the tree, do not "
-        "call it again; use search_files/find_files, grep, read_file, git_diff, or provide the final "
-        "answer. If a test fails twice with the same error, inspect the file tree and relevant files "
-        "before editing again. "
-        "CRITICAL: Use the 'test_cmd' tool for ANY command that might be interactive (games, prompts, "
-        "servers). DO NOT use 'run_cmd' for these. MANDATORY: Always use 'write_file' for all code "
-        "modifications to ensure the user sees a diff report. When the user asks for multiple "
-        "searches, perform at least 3-5 searches. "
-        "IMPORTANT: You are an autonomous agent. NEVER ask the user to run a command. RUN IT YOURSELF. "
-        "NEVER simulate tool results. ONLY use 'CONTINUE' if you have just called a tool and need to "
-        "perform another step. ALWAYS prioritize answering the user's primary question directly after "
-        "gathering data. If searching for software features, prioritize finding 'Release Notes' or "
-        "'What's New' pages. Planning is DISABLED. Do not use create_plan tool unless planning is "
-        "explicitly enabled.";
+    std::string sys_content = default_system_prompt(cur_date);
 
     messages.clear();
     {
@@ -504,6 +449,7 @@ void LOREA::set_backend(const std::string& backend_, std::optional<std::string> 
     if (!keep_model) {
         model_name = map_get(BACKEND_DEFAULT_MODELS, backend_, model_name);
     }
+    sync_context_budget();
     if (backend == "mlx") {
         log_info("MLX model will load on the first prompt.");
         if (is_large_mlx_model(model_name))
@@ -526,7 +472,7 @@ void LOREA::backend_menu() {
         std::string("1. ") + Colors::CYAN + "ollama" + Colors::RESET + "     " + Colors::GRAY +
             "Local Ollama API on port 11434" + Colors::RESET,
         std::string("2. ") + Colors::CYAN + "anthropic" + Colors::RESET + "  " + Colors::GRAY +
-            "Claude API — Opus, Sonnet, Haiku (needs API key)" + Colors::RESET,
+            "Anthropic API models (needs API key)" + Colors::RESET,
         std::string("3. ") + Colors::CYAN + "openai" + Colors::RESET + "     " + Colors::GRAY +
             "ChatGPT / Codex API — GPT-4o, o-series (needs API key)" + Colors::RESET,
         std::string("4. ") + Colors::CYAN + "llama-cpp" + Colors::RESET + "  " + Colors::GRAY +
@@ -620,6 +566,32 @@ void LOREA::model_menu() {
             if (seen.insert(m).second) uniq.push_back(m);
         }
         suggestions = uniq;
+    } else if (backend == "llama-cpp") {
+        namespace fs = std::filesystem;
+        std::vector<std::string> local_models;
+        std::vector<std::string> search_dirs = {
+            "llama.cpp/models",
+            expanduser("~/llama.cpp/models")
+        };
+        for (const auto& dir : search_dirs) {
+            std::error_code ec;
+            if (fs::exists(dir, ec) && fs::is_directory(dir, ec)) {
+                for (const auto& entry : fs::recursive_directory_iterator(dir, fs::directory_options::skip_permission_denied, ec)) {
+                    if (entry.is_regular_file(ec) && entry.path().extension() == ".gguf") {
+                        local_models.push_back(entry.path().string());
+                    }
+                }
+            }
+        }
+        std::vector<std::string> combined;
+        for (const auto& lm : local_models) combined.push_back(lm);
+        for (const auto& s : suggestions) combined.push_back(s);
+        std::vector<std::string> uniq;
+        std::set<std::string> seen;
+        for (const auto& m : combined) {
+            if (seen.insert(m).second) uniq.push_back(m);
+        }
+        suggestions = uniq;
     }
     std::vector<std::string> options;
     for (std::size_t i = 0; i < suggestions.size(); ++i)
@@ -636,6 +608,7 @@ void LOREA::model_menu() {
         if (!model || model->empty()) return;
         model_name = *model;
     }
+    sync_context_budget();
     if (backend == "mlx") {
         if (server_process && server_model != std::optional<std::string>(model_name))
             cleanup();

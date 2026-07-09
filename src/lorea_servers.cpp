@@ -164,7 +164,8 @@ void LOREA::ensure_mlx_server() {
     if (model_name == LOREA_DIR && !ensure_lorea()) {
         model_name = LOREA_FALLBACK;
     }
-    const std::string host = before_first_colon(after_slashslash(url));
+    std::string host = before_first_colon(after_slashslash(url));
+    if (host.empty() || host == "localhost") host = "127.0.0.1";
     int port = parse_int_or(after_last_colon(url), 8080);
 
     if (server_process && server_process->poll().has_value()) {
@@ -204,26 +205,29 @@ void LOREA::ensure_mlx_server() {
 }
 
 std::optional<std::string> LOREA::find_llama_server_bin() {
-    const char* envbin = std::getenv("LLAMA_SERVER_BIN");
-    std::vector<std::string> cands;
-    cands.push_back(envbin ? std::string(envbin) : std::string());
-    cands.push_back(expanduser("~/llama.cpp/build/bin/llama-server"));
-    cands.push_back("/opt/homebrew/bin/llama-server");
-    cands.push_back("/usr/local/bin/llama-server");
     std::error_code ec;
-    for (const std::string& c : cands) {
-        if (!c.empty() && fs::is_regular_file(c, ec) && ::access(c.c_str(), X_OK) == 0) {
-            return c;
-        }
+    const char* envbin = std::getenv("LLAMA_SERVER_BIN");
+    if (envbin && *envbin && fs::is_regular_file(envbin, ec) && ::access(envbin, X_OK) == 0) {
+        return std::string(envbin);
     }
     try {
         ProcResult r = run_subprocess({"which", "llama-server"}, "", 5.0, false);
         std::string out = strip(r.out);
-        if (!out.empty() && fs::is_regular_file(out, ec)) {
+        if (!out.empty() && fs::is_regular_file(out, ec) && ::access(out.c_str(), X_OK) == 0) {
             return out;
         }
-    } catch (...) {
-
+    } catch (...) {}
+    
+    std::vector<std::string> cands = {
+        "/opt/homebrew/bin/llama-server",
+        "/usr/local/bin/llama-server",
+        "llama.cpp/build/bin/llama-server",
+        expanduser("~/llama.cpp/build/bin/llama-server")
+    };
+    for (const std::string& c : cands) {
+        if (!c.empty() && fs::is_regular_file(c, ec) && ::access(c.c_str(), X_OK) == 0) {
+            return c;
+        }
     }
     return std::nullopt;
 }
@@ -247,13 +251,13 @@ void LOREA::ensure_llamacpp_server() {
         return;
     }
 
-    const std::string model = expanduser(model_name);
-    std::error_code ec;
-    if (!(ends_with(model, ".gguf") && fs::is_regular_file(model, ec))) {
-        log_info("llama-cpp model is not a local .gguf file (" + model_name + "); "
+    std::optional<std::string> resolved = resolve_gguf_path(model_name);
+    if (!resolved) {
+        log_info("llama-cpp model is not a local .gguf file and could not be resolved (" + model_name + "); "
                  "expecting an external server at " + url + ".");
         return;
     }
+    const std::string model = *resolved;
     std::optional<std::string> binpath = find_llama_server_bin();
     if (!binpath) {
         log_info("Could not find the llama-server binary (set LLAMA_SERVER_BIN or "
@@ -262,7 +266,9 @@ void LOREA::ensure_llamacpp_server() {
     }
 
     log_info("Auto-starting llama.cpp server: " + fs::path(model).filename().string());
-    std::vector<std::string> cmd = {*binpath, "-m", model, "-ngl", "99", "-c", "8192",
+    int server_ctx = std::max(4096, context_budget);
+    std::vector<std::string> cmd = {*binpath, "-m", model, "-ngl", "99",
+                                    "-c", std::to_string(server_ctx),
                                     "--host", host, "--port", std::to_string(port)};
     try {
         server_process = spawn_process(cmd, true);
@@ -313,7 +319,7 @@ std::pair<std::string, int> LOREA::inference_hostport() {
     std::string host;
     try {
         host = before_first_colon(after_slashslash(url));
-        if (host.empty()) host = "127.0.0.1";
+        if (host.empty() || host == "localhost") host = "127.0.0.1";
     } catch (...) {
         host = "127.0.0.1";
     }
@@ -494,6 +500,112 @@ std::optional<std::string> LOREA::server_crash_note(const std::exception& exc) {
         "model needs most of the 32 GB on its own. Fix: quit other GPU apps, then send your "
         "message again and I'll auto-restart the server. For a smaller, more resilient model, "
         "run /model and pick a 4-8B one.");
+}
+
+std::optional<std::string> LOREA::resolve_gguf_path(const std::string& name) {
+    std::error_code ec;
+    if (name.empty()) return std::nullopt;
+
+    std::string expanded = expanduser(name);
+    if (ends_with(to_lower(expanded), ".gguf") && fs::is_regular_file(expanded, ec)) {
+        return expanded;
+    }
+
+    if (fs::exists(expanded, ec) && fs::is_directory(expanded, ec)) {
+        for (const auto& entry : fs::recursive_directory_iterator(expanded, fs::directory_options::skip_permission_denied, ec)) {
+            if (entry.is_regular_file(ec) && to_lower(entry.path().extension().string()) == ".gguf") {
+                return entry.path().string();
+            }
+        }
+    }
+
+    std::vector<std::string> base_dirs = {
+        "llama.cpp/models",
+        expanduser("~/llama.cpp/models")
+    };
+
+    std::string last_seg = name;
+    auto pos = last_seg.rfind('/');
+    if (pos != std::string::npos) {
+        last_seg = last_seg.substr(pos + 1);
+    }
+
+    for (const auto& base : base_dirs) {
+        std::vector<std::string> candidates = {
+            (fs::path(base) / name).string(),
+            (fs::path(base) / last_seg).string(),
+        };
+        for (const auto& cand : candidates) {
+            std::string c_exp = expanduser(cand);
+            if (fs::exists(c_exp, ec)) {
+                if (fs::is_directory(c_exp, ec)) {
+                    for (const auto& entry : fs::recursive_directory_iterator(c_exp, fs::directory_options::skip_permission_denied, ec)) {
+                        if (entry.is_regular_file(ec) && to_lower(entry.path().extension().string()) == ".gguf") {
+                            return entry.path().string();
+                        }
+                    }
+                } else if (ends_with(to_lower(c_exp), ".gguf") && fs::is_regular_file(c_exp, ec)) {
+                    return c_exp;
+                }
+            }
+        }
+
+        std::vector<std::string> direct_files = {
+            (fs::path(base) / (name + ".gguf")).string(),
+            (fs::path(base) / (last_seg + ".gguf")).string(),
+            (fs::path(base) / name).string(),
+            (fs::path(base) / last_seg).string()
+        };
+        for (const auto& f : direct_files) {
+            std::string f_exp = expanduser(f);
+            if (ends_with(to_lower(f_exp), ".gguf") && fs::is_regular_file(f_exp, ec)) {
+                return f_exp;
+            }
+        }
+    }
+
+    std::string clean_name = to_lower(last_seg);
+    if (ends_with(clean_name, ".gguf")) clean_name = clean_name.substr(0, clean_name.size() - 5);
+    if (ends_with(clean_name, "-gguf")) clean_name = clean_name.substr(0, clean_name.size() - 5);
+
+    for (const auto& base : base_dirs) {
+        if (fs::exists(base, ec) && fs::is_directory(base, ec)) {
+            for (const auto& entry : fs::recursive_directory_iterator(base, fs::directory_options::skip_permission_denied, ec)) {
+                if (entry.is_regular_file(ec) && to_lower(entry.path().extension().string()) == ".gguf") {
+                    std::string fname = to_lower(entry.path().filename().string());
+                    if (fname.find(clean_name) != std::string::npos) {
+                        return entry.path().string();
+                    }
+                }
+            }
+        }
+    }
+
+    return std::nullopt;
+}
+
+std::string LOREA::find_hf_repo_for_model(const std::string& name) {
+    if (name.find('/') != std::string::npos) {
+        return name;
+    }
+    auto it = DOWNLOAD_MODEL_OPTIONS.find("llama-cpp");
+    if (it != DOWNLOAD_MODEL_OPTIONS.end()) {
+        for (const auto& opt : it->second) {
+            if (opt.value.find('/') != std::string::npos) {
+                std::string last = opt.value.substr(opt.value.rfind('/') + 1);
+                if (to_lower(last) == to_lower(name)) {
+                    return opt.value;
+                }
+            }
+        }
+    }
+    if (to_lower(name).rfind("qwen", 0) == 0) {
+        return "Qwen/" + name;
+    }
+    if (to_lower(name).rfind("llama", 0) == 0) {
+        return "bartowski/" + name;
+    }
+    return name;
 }
 
 }

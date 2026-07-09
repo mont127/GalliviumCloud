@@ -191,20 +191,23 @@ void log_tool(const std::string& msg) { fake_loading(msg); }
 
 void log_info(const std::string& msg) {
     using C = Colors;
-    std::cout << left_indent() << ACCENT << C::BOLD << "·" << C::RESET << " "
-              << C::DIM << C::GRAY << "info" << C::RESET << "  " << msg << C::RESET << "\n";
+    std::cout << left_indent() << C::CYAN << C::BOLD << "◇" << C::RESET << " "
+              << C::BG_DARK << C::SKY << C::BOLD << " INFO " << C::RESET
+              << "  " << msg << C::RESET << "\n";
 }
 
 void log_ok(const std::string& msg) {
     using C = Colors;
-    std::cout << left_indent() << C::GREEN << C::BOLD << "✦" << C::RESET << " "
-              << C::DIM << C::GREEN << "done" << C::RESET << "  " << msg << C::RESET << "\n";
+    std::cout << left_indent() << C::MINT << C::BOLD << "◆" << C::RESET << " "
+              << C::BG_DARK << C::MINT << C::BOLD << " DONE " << C::RESET
+              << "  " << msg << C::RESET << "\n";
 }
 
 void log_warn(const std::string& msg) {
     using C = Colors;
-    std::cout << left_indent() << C::YELLOW << C::BOLD << "!" << C::RESET << " "
-              << C::DIM << C::GRAY << "warn" << C::RESET << "  " << msg << C::RESET << "\n";
+    std::cout << left_indent() << C::AMBER << C::BOLD << "▲" << C::RESET << " "
+              << C::BG_DARK << C::AMBER << C::BOLD << " WARN " << C::RESET
+              << "  " << msg << C::RESET << "\n";
 }
 
 std::string summarize_tool_args(const json& args) {
@@ -341,39 +344,21 @@ void print_diff(const std::vector<std::string>& diff_lines) {
 }
 
 const std::vector<std::string> LOGO_PHRASES = {
-    "'Im, invinicble' - Mark Grayson",
-    "-Code like a LOREAN",
-    "-Powered by ollama and local AI models",
-    "'Stand ready for my arrival, worm.' - Concquest",
-    " 'MORE BATTLE, MORE GLORY, MORE WORTHY OPPONENTS!' - Battle Beast",
-    "'I am Thragg the Regent of the Viltrum empire.'",
-    "“ From this point forward we shall only be using our weapons to fight. No more tricks, understand that? ” - Dravik, The Rat King (BTW SHOUTOUT TO DEEPWOKEN)",
-    "Code is poetry, and poetry is for everyone.",
-    "“ Ah, the vainglorious folly... I shall make this agony everlasting. ” - True Heart of Enmity",
-    "“ So it seems honour comes to reclaim its lost child. You fools simply misunderstand - I have found a power far greater than your impotent little Vow. ” - Zi'eer, the Fourth Prophet",
-    "'Oh my god its albert einstein' - Some random dude",
-    "“ …Your movements lack discipline. ” - Maestro Evengarde Rest ",
-    "“ITS COMMON BALL“",
-    "I... eat... your... sandwiches! I eat 'em up!",
-    "'I found you, faker!','Faker? You aren't even good enough to be my fake!'",
-    "'If life gives you lemons, make lemonade.'",
-    "'Some protein tubes... with that white sauce'",
-    "“ I am a Krulian, and one of the few known to you surface-folk. We are the closest bridge between the Gods below and your kind. The next step in the evolutionary chain you could say... But I really must be off, it was a pleasure dancing with you as always. ” ― The Ferryman",
-    "'Im sorry for not being creative enough to come up with more phrases' - mont127",
-    "'The only way to do great work is to love what you do.' - Steve Jobs",
-    "'Code is like humor. When you have to explain it, its bad.' - Cory House",
-    "'Shout out to realmaitreal (Or hafliss) for helping with macndcheese'",
-    "'Its better to say something then just to stay silent' - I heard that somewhere dunno where",
-    "If AI is your power, then what are you without it?",
-    "*Some random cool line from a show i watched*",
-    "'Sometimes I dream of saving the world, saving everyone from the invisible hand' - Elliot Alderson",
-    "'Are you the strongest because you are Satoru Gojo or are you Satoru Gojo because you are the strongest?' - Geto Suguru",
-    "'Stand users attract each other same goes for lonely people' ",
-    "'The world is not beautiful, therefore it is.' - Kino's Journey",
-    "'You cant like the sky without seeing the clouds' ",
-    "'The world is full of nice people. If you can't find one, be one.' - Nishimiya Shouko",
-    "'AI slop? As long as it makes the code Im fine with it.'",
-    "'Cool quote'",
+    "ship the sharp edge",
+    "patch fast, verify faster",
+    "terminal energy, local control",
+    "tools armed, context loaded",
+    "small diff, big velocity",
+    "read it, patch it, prove it",
+    "focus mode: no fluff",
+    "make the machine blink first",
+    "turn prompts into commits",
+    "build pressure, release clean",
+    "one prompt closer to done",
+    "high signal, low drag",
+    "agent loop locked in",
+    "clean code, bright trace",
+    "run the test, earn the glow",
 };
 
 std::optional<std::string> pick_logo_phrase() {
@@ -388,30 +373,30 @@ const std::vector<int> A_GRADIENT     = {51, 51, 50, 50, 51, 51};
 const std::vector<int> LOGO_GRADIENT  = {156, 84, 48};
 
 const std::vector<std::string> LOGO_LORE_FULL = {
-    "██╗      ██████╗ ██████╗ ███████╗",
-    "██║     ██╔═══██╗██╔══██╗██╔════╝",
-    "██║     ██║   ██║██████╔╝█████╗  ",
-    "██║     ██║   ██║██╔══██╗██╔══╝  ",
-    "███████╗╚██████╔╝██║  ██║███████╗",
-    "╚══════╝ ╚═════╝ ╚═╝  ╚═╝╚══════╝",
+    " ██████╗  ██████╗██╗     ",
+    "██╔═══██╗██╔════╝██║     ",
+    "██║   ██║██║     ██║     ",
+    "██║   ██║██║     ██║     ",
+    "╚██████╔╝╚██████╗███████╗",
+    " ╚═════╝  ╚═════╝╚══════╝",
 };
 const std::vector<std::string> LOGO_A_FULL = {
-    " █████╗ ",
-    "██╔══██╗",
-    "███████║",
-    "██╔══██║",
-    "██║  ██║",
-    "╚═╝  ╚═╝",
+    "██╗",
+    "██║",
+    "██║",
+    "██║",
+    "██║",
+    "╚═╝",
 };
 const std::vector<std::string> LOGO_LORE_MINI = {
-    "╦   ╔═╗ ╦═╗ ╔═",
-    "║   ║ ║ ╠╦╝ ╠═",
-    "╩══ ╚═╝ ╩╚═ ╚═",
+    "╔═╗ ╔═╗ ╦  ",
+    "║ ║ ║   ║  ",
+    "╚═╝ ╚═╝ ╩═╝",
 };
 const std::vector<std::string> LOGO_A_MINI = {
-    " ╔═╗",
-    " ╠═╣",
-    " ╩ ╩",
+    " ╦",
+    " ║",
+    " ╩",
 };
 
 const char* FLOWER_ART_RAW = R"FLOWER(
@@ -565,8 +550,8 @@ std::vector<std::string> logo_lockup_lines(int cols) {
 std::vector<std::string> logo_lines(const std::optional<std::string>& phrase) {
     using C = Colors;
     int cols = term_cols();
-    std::string tagline = "LOREA · AI coding assistant for the terminal";
-    std::string sub = "local models  ·  shell  ·  files  ·  web  ·  autonomous coding";
+    std::string tagline = "OCLI // local agent command center";
+    std::string sub = "shell · files · web · tools · autonomous coding";
     std::vector<std::string> out;
     out.push_back("");
 
@@ -590,20 +575,32 @@ std::vector<std::string> logo_lines(const std::optional<std::string>& phrase) {
                 + "\033[38;5;51m" + LOGO_A_MINI[index] + C::RESET);
         }
     } else {
-        out.push_back(center_pad_logo(cols, 5) + C::BOLD + "\033[38;5;46mLORE\033[38;5;51mA" + C::RESET);
+        out.push_back(center_pad_logo(cols, 4) + C::BOLD + "\033[38;5;46mOCL\033[38;5;51mI" + C::RESET);
     }
 
     {
-        std::string label = " LOREA ";
-        int inner = static_cast<int>(utf8_len(label));
+        std::string label = gradient_text(" ◆ OCLI ", &FLAIR_RAMP);
+        std::string tail = std::string(C::DIM) + C::GRAY + "terminal autopilot " + C::RESET;
+        std::string line = label + tail;
+        int inner = static_cast<int>(clean_len(line));
         std::string bar = rep_str("─", inner);
         std::string pill_pad = center_pad_logo(cols, inner + 2);
         out.push_back("");
-        out.push_back(pill_pad + C::DIM + C::GREEN + "╭" + bar + "╮" + C::RESET);
-        out.push_back(pill_pad + C::DIM + C::GREEN + "│" + C::RESET +
-                      C::BOLD + C::GREEN + label + C::RESET +
-                      C::DIM + C::GREEN + "│" + C::RESET);
-        out.push_back(pill_pad + C::DIM + C::GREEN + "╰" + bar + "╯" + C::RESET);
+        out.push_back(pill_pad + "\033[38;5;51m" + "╭" + bar + "╮" + C::RESET);
+        out.push_back(pill_pad + "\033[38;5;51m" + "│" + C::RESET + line +
+                      "\033[38;5;51m" + "│" + C::RESET);
+        out.push_back(pill_pad + "\033[38;5;99m" + "╰" + bar + "╯" + C::RESET);
+    }
+
+    {
+        auto chip = [&](const std::string& text, const char* fg) {
+            return std::string(C::BG_DARK) + fg + C::BOLD + " " + text + " " + C::RESET;
+        };
+        std::string chips = chip("TOOLS", C::MINT) + " " + chip("SHELL", C::SKY) + " " +
+                            chip("FILES", C::AMBER) + " " + chip("WEB", C::PINK);
+        if (cols >= static_cast<int>(clean_len(chips))) {
+            out.push_back(center_pad_logo(cols, static_cast<int>(clean_len(chips))) + chips);
+        }
     }
 
     if (phrase && !phrase->empty()) {
@@ -666,8 +663,8 @@ namespace {
 const std::vector<std::string> SPIN_FRAMES =
     {"⣾", "⣽", "⣻", "⢿", "⡿", "⣟", "⣯", "⣷"};
 const std::vector<std::string> SPIN_PULSES = {
-    "syncing context", "sampling tokens", "routing tools", "stream warming",
-    "planning tool calls", "reading context", "loading model"};
+    "charging context", "sampling tokens", "routing tools", "warming stream",
+    "arming tool calls", "reading context", "loading model", "locking in"};
 const int SPIN_PULSE_HOLD = 64;
 const int SPIN_PHRASE_HOLD = 50;
 }

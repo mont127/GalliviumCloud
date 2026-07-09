@@ -14,6 +14,8 @@ void live_end();
 
 bool live_active();
 
+void live_set_generating(bool on);
+
 void live_set_status_line(const std::string& line);
 
 std::string live_take_terminal_context();
@@ -30,6 +32,18 @@ struct LiveSuspendGuard {
   }
   LiveSuspendGuard(const LiveSuspendGuard&) = delete;
   LiveSuspendGuard& operator=(const LiveSuspendGuard&) = delete;
+};
+
+struct LiveGeneratingGuard {
+  bool active;
+  LiveGeneratingGuard() : active(live_active()) {
+    if (active) live_set_generating(true);
+  }
+  ~LiveGeneratingGuard() {
+    if (active) live_set_generating(false);
+  }
+  LiveGeneratingGuard(const LiveGeneratingGuard&) = delete;
+  LiveGeneratingGuard& operator=(const LiveGeneratingGuard&) = delete;
 };
 
 }

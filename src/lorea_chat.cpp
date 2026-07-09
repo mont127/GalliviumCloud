@@ -69,11 +69,6 @@ std::string lstrip(const std::string& s) {
     if (b == std::string::npos) return "";
     return s.substr(b);
 }
-std::string rstrip_ws(const std::string& s) {
-    std::size_t e = s.find_last_not_of(PY_WS);
-    if (e == std::string::npos) return "";
-    return s.substr(0, e + 1);
-}
 std::string lower_ascii(const std::string& s) {
     std::string o = s;
     for (char& c : o) c = (char)std::tolower((unsigned char)c);
@@ -108,17 +103,6 @@ std::string replace_all(std::string s, const std::string& from, const std::strin
     }
     return s;
 }
-std::vector<std::string> split_char(const std::string& s, char d) {
-    std::vector<std::string> out;
-    std::string cur;
-    for (char c : s) {
-        if (c == d) { out.push_back(cur); cur.clear(); }
-        else cur += c;
-    }
-    out.push_back(cur);
-    return out;
-}
-
 std::string join_ws(const std::string& s) {
     std::string out;
     bool first = true;
@@ -398,7 +382,7 @@ bool LOREA::process_chat() {
                      "-round limit for one turn; stopping to avoid an endless loop.");
             json am = json::object();
             am["role"] = "assistant";
-            am["content"] = "[LOREA LOOP GUARD] Stopped after " + std::to_string(MAX_ROUNDS) +
+            am["content"] = "[OCLI LOOP GUARD] Stopped after " + std::to_string(MAX_ROUNDS) +
                             " model rounds in one turn. Give the user a concise status of what "
                             "was done and what remains.";
             messages.push_back(am);
@@ -431,7 +415,7 @@ bool LOREA::process_chat() {
                 content += token;
                 if (first_chunk && !strip(token).empty()) {
                     spinner->stop();
-                    std::cout << "\n" << left_indent() << ACCENT << Colors::BOLD << "\xE2\x9D\xAF LOREA"
+                    std::cout << "\n" << left_indent() << ACCENT << Colors::BOLD << "\xE2\x9D\xAF OCLI"
                               << Colors::RESET << " " << Colors::DIM << Colors::GRAY << "\xC2\xB7"
                               << Colors::RESET << " " << std::flush;
                     first_chunk = false;
@@ -463,21 +447,21 @@ bool LOREA::process_chat() {
                 if (!in_thought && !in_tool) {
                     line_buffer += token;
                     for (const auto& tag : tags_to_hide) line_buffer = replace_all(line_buffer, tag, "");
-                    bool is_potential_tag = false;
+                    std::size_t keep = 0;
                     for (const auto& tag : tags_to_hide) {
                         for (std::size_t i = 1; i < tag.size(); ++i) {
-                            if (endswith(line_buffer, tag.substr(0, i))) { is_potential_tag = true; break; }
+                            if (i <= line_buffer.size() && endswith(line_buffer, tag.substr(0, i)) && i > keep)
+                                keep = i;
                         }
-                        if (is_potential_tag) break;
                     }
-                    if (!is_potential_tag) is_potential_tag = endswith(rstrip_ws(line_buffer), "<");
-                    if (!is_potential_tag && contains(line_buffer, "\n")) {
-                        std::vector<std::string> parts = split_char(line_buffer, '\n');
-                        for (std::size_t i = 0; i + 1 < parts.size(); ++i) {
-                            std::cout << render_text(parts[i] + "\n") << std::flush;
-                            if (!strip(parts[i]).empty()) displayed_any = true;
+                    if (keep == 0 && endswith(line_buffer, "<")) keep = 1;
+                    if (keep < line_buffer.size()) {
+                        std::string flush = line_buffer.substr(0, line_buffer.size() - keep);
+                        if (!flush.empty()) {
+                            std::cout << render_text(flush) << std::flush;
+                            if (!strip(flush).empty()) displayed_any = true;
                         }
-                        line_buffer = parts.back();
+                        line_buffer.erase(0, line_buffer.size() - keep);
                     }
                 }
             };
@@ -619,9 +603,36 @@ bool LOREA::process_chat() {
                 req.follow_redirects = true;
 
                 if (backend == "ollama") {
+                    // Hoist all system messages to position 0 — models like Qwen3 require it.
+                    auto get_str = [](const json& m, const char* k) -> std::string {
+                        if (m.is_object() && m.contains(k) && m.at(k).is_string())
+                            return m.at(k).get<std::string>();
+                        return {};
+                    };
+                    std::string sys_content;
+                    auto add_sys = [&](const json& m) {
+                        if (get_str(m, "role") != "system") return;
+                        std::string s = get_str(m, "content");
+                        if (s.empty()) return;
+                        if (!sys_content.empty()) sys_content += "\n\n";
+                        sys_content += s;
+                    };
+                    for (auto& m : messages) add_sys(m);
+                    for (auto& m : ephemeral_reminders()) add_sys(m);
+
                     json ollama_messages = json::array();
-                    for (auto& m : messages) ollama_messages.push_back(m);
-                    for (auto& m : ephemeral_reminders()) ollama_messages.push_back(m);
+                    if (!sys_content.empty()) {
+                        json sys = json::object(); sys["role"] = "system"; sys["content"] = sys_content;
+                        ollama_messages.push_back(std::move(sys));
+                    }
+                    for (auto& m : messages) {
+                        if (get_str(m, "role") == "system") continue;
+                        ollama_messages.push_back(m);
+                    }
+                    for (auto& m : ephemeral_reminders()) {
+                        if (get_str(m, "role") == "system") continue;
+                        ollama_messages.push_back(m);
+                    }
                     json body = json::object();
                     body["model"] = model_name;
                     body["messages"] = ollama_messages;
@@ -701,7 +712,7 @@ bool LOREA::process_chat() {
 
                 if (backend == "anthropic") {
                     spinner->stop();
-                    log_info("Claude " + model_name + " \xE2\x80\x94 awaiting response...");
+                    log_info("Anthropic " + model_name + " \xE2\x80\x94 awaiting response...");
                     spinner->start();
                 } else if (backend != "ollama") {
                     spinner->stop();
@@ -1172,7 +1183,7 @@ bool LOREA::process_chat() {
                               << Colors::RESET << "\n";
                     json am = json::object();
                     am["role"] = "assistant";
-                    am["content"] = "[LOREA LOOP GUARD] I stayed wedged even after auto-recovery (save "
+                    am["content"] = "[OCLI LOOP GUARD] I stayed wedged even after auto-recovery (save "
                                     "session, restart server, reload), so I stopped. Send your message again, "
                                     "or /clear to reset.";
                     messages.push_back(am);
@@ -1255,7 +1266,7 @@ bool LOREA::process_chat() {
                               << Colors::RESET << "\n";
                     json gm = json::object();
                     gm["role"] = "assistant";
-                    gm["content"] = "[LOREA LOOP GUARD] I kept restating the same step without turning it into "
+                    gm["content"] = "[OCLI LOOP GUARD] I kept restating the same step without turning it into "
                                     "a runnable command, so I stopped instead of looping forever. The action I "
                                     "described could not be expressed as a single literal tool argument. To "
                                     "proceed: give me the exact command to run, or have me use run_cmd with a "
@@ -1400,7 +1411,7 @@ bool LOREA::process_chat() {
                                   << Colors::RESET << "\n";
                         json gm = json::object();
                         gm["role"] = "assistant";
-                        std::string gc = "[LOREA LOOP GUARD] I kept re-describing the next step without performing "
+                        std::string gc = "[OCLI LOOP GUARD] I kept re-describing the next step without performing "
                                          "it, so I stopped. Act on the result I already have instead of restating "
                                          "the plan.";
                         if (!_tail.empty()) gc += "\nLatest tool result:\n" + utf8_substr(_tail, 0, 600);
@@ -1613,7 +1624,7 @@ bool LOREA::process_chat() {
                                 repeated_failure_count = 0;
                             }
                             if (repeated_failure_count >= 2) {
-                                result += "\n\n[LOREA LOOP GUARD] The same failure has repeated. Do not rewrite the "
+                                result += "\n\n[OCLI LOOP GUARD] The same failure has repeated. Do not rewrite the "
                                           "same test file or rerun the same command. First inspect the project tree "
                                           "with `find . -maxdepth 3 -type f`, then fix the actual package/import "
                                           "structure, such as missing __init__.py or wrong file placement.";
@@ -1647,7 +1658,7 @@ bool LOREA::process_chat() {
                                 : std::string(" It returned the exact same output as before, so re-running it cannot "
                                               "reveal anything new.");
                         if (!_is_empty && _prior->count == 1) {
-                            std::string _note = "[LOREA LOOP GUARD] You already ran `" + name +
+                            std::string _note = "[OCLI LOOP GUARD] You already ran `" + name +
                                                 "` with these exact arguments this turn and got this same result." +
                                                 _interp +
                                                 " Do NOT issue this identical call again. Take a different action "
@@ -1664,7 +1675,7 @@ bool LOREA::process_chat() {
                             had_tool_calls = true;
                             continue;
                         }
-                        std::string _note = "[LOREA LOOP GUARD] You have issued this identical `" + name + "` call " +
+                        std::string _note = "[OCLI LOOP GUARD] You have issued this identical `" + name + "` call " +
                                             std::to_string(_prior->count + 1) +
                                             " times with the same result." + _interp +
                                             " STOP calling tools now and write your complete final answer to the user "
@@ -1760,7 +1771,7 @@ bool LOREA::process_chat() {
                               << Colors::RESET << "\n";
                     json gm = json::object();
                     gm["role"] = "assistant";
-                    gm["content"] = "[LOREA LOOP GUARD] I kept emitting tool calls that aren't valid (likely a tool "
+                    gm["content"] = "[OCLI LOOP GUARD] I kept emitting tool calls that aren't valid (likely a tool "
                                     "name that does not exist or malformed arguments) and made no progress, so I "
                                     "stopped instead of looping. Valid tools: " + join(avail, ", ") +
                                     ". Tell me which to use, or rephrase the request.";
@@ -1792,7 +1803,7 @@ bool LOREA::process_chat() {
             interrupter.stop_listening();
             json am = json::object();
             am["role"] = "assistant";
-            am["content"] = std::string("[LOREA ERROR] ") + e.what();
+            am["content"] = std::string("[OCLI ERROR] ") + e.what();
             messages.push_back(am);
             std::cout << Colors::RED << "Error: " << e.what() << Colors::RESET << "\n";
             return false;

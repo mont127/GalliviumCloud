@@ -1453,11 +1453,12 @@ std::string LOREA::read_file(const std::string& path) {
             log_warn(std::string("Blocked file read: ") + ps.reason);
             return std::string("Refused to read file for safety: ") + ps.reason;
         }
+        std::string target = ps.has_abspath ? ps.abspath : py_abspath(path);
         std::error_code ec;
-        if (fs::is_directory(fs::path(path), ec))
+        if (fs::is_directory(fs::path(target), ec))
             return std::string("Error: '") + path + "' is a directory. Use 'ls' to list its contents.";
         log_tool(std::string("Reading: ") + path);
-        std::ifstream f(path, std::ios::binary);
+        std::ifstream f(target, std::ios::binary);
         if (!f) throw std::runtime_error(std::string("[Errno 2] No such file or directory: '") + path + "'");
         std::ostringstream ss;
         ss << f.rdbuf();
@@ -1480,16 +1481,16 @@ std::string LOREA::write_file(const std::string& path, const std::string& conten
             return std::string("Refused to write file for safety: ") + ps.reason;
         }
         log_tool(std::string("Writing: ") + path);
-        std::string abspath = py_abspath(path);
+        std::string abspath = ps.has_abspath ? ps.abspath : py_abspath(path);
         std::error_code ec;
         fs::path parent = fs::path(abspath).parent_path();
         if (!parent.empty()) fs::create_directories(parent, ec);
 
         std::error_code eec;
-        bool existed = fs::exists(fs::path(path), eec);
+        bool existed = fs::exists(fs::path(abspath), eec);
         std::string old_content;
         if (existed) {
-            std::ifstream in(path, std::ios::binary);
+            std::ifstream in(abspath, std::ios::binary);
             std::ostringstream ss; ss << in.rdbuf();
             old_content = ss.str();
         }
@@ -1502,7 +1503,7 @@ std::string LOREA::write_file(const std::string& path, const std::string& conten
         if (undo_stack.size() > 50) undo_stack.erase(undo_stack.begin());
 
         {
-            std::ofstream out(path, std::ios::binary | std::ios::trunc);
+            std::ofstream out(abspath, std::ios::binary | std::ios::trunc);
             if (!out) throw std::runtime_error(std::string("[Errno 13] Permission denied: '") + path + "'");
             out << content;
         }

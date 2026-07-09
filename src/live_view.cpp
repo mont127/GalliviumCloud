@@ -26,12 +26,13 @@ namespace ocli {
 
 namespace {
 
-const char* GREEN_BG = "\033[48;2;104;215;138m";
-const char* DARK_FG = "\033[38;2;9;28;16m";
-const char* DARK_DIM_FG = "\033[38;2;36;92;52m";
-const char* GREEN_DIM_FG = "\033[38;2;74;126;82m";
-const char* NEON_FG = "\033[38;2;128;236;150m";
-const char* CYAN_FG = "\033[38;2;56;220;200m";
+const char* GREEN_BG = "\033[48;2;74;222;128m";
+const char* DARK_FG = "\033[38;2;4;20;12m";
+const char* DARK_DIM_FG = "\033[38;2;22;74;46m";
+const char* GREEN_DIM_FG = "\033[38;2;86;170;120m";
+const char* NEON_FG = "\033[38;2;110;243;150m";
+const char* CYAN_FG = "\033[38;2;56;220;220m";
+const char* PINK_FG = "\033[38;2;5;40;24m";
 const char* BOLD = "\033[1m";
 const char* RESET = "\033[0m";
 
@@ -45,16 +46,28 @@ std::string lerp_color(int r0, int g0, int b0, int r1, int g1, int b1, int t, in
   return "\033[38;2;" + std::to_string(r) + ";" + std::to_string(g) + ";" + std::to_string(b) + "m";
 }
 
-std::string pulse_on_green(unsigned long f) {
-  int phase = static_cast<int>(f % 50);
-  int t = phase < 25 ? phase : 50 - phase;
-  return lerp_color(18, 44, 28, 232, 255, 238, t, 25);
-}
-
 std::string pulse_neon(unsigned long f) {
   int phase = static_cast<int>(f % 56);
   int t = phase < 28 ? phase : 56 - phase;
   return lerp_color(96, 226, 140, 56, 220, 220, t, 28);
+}
+
+std::string pulse_hot(unsigned long f) {
+  int phase = static_cast<int>(f % 60);
+  int t = phase < 30 ? phase : 60 - phase;
+  return lerp_color(6, 34, 22, 210, 255, 240, t, 30);
+}
+
+std::string pulse_meter(unsigned long f, int width) {
+  std::string out;
+  int pos = static_cast<int>(f % static_cast<unsigned long>(std::max(1, width)));
+  for (int i = 0; i < width; ++i) {
+    int d = std::abs(i - pos);
+    if (d <= 1) out += std::string(DARK_FG) + BOLD + "▰";
+    else if (d == 2) out += std::string(CYAN_FG) + "▰";
+    else out += std::string(DARK_DIM_FG) + "▱";
+  }
+  return out + RESET;
 }
 
 bool blink_on(unsigned long f) { return (f % 18) < 11; }
@@ -64,6 +77,7 @@ std::string g_conv;
 
 std::mutex g_input_mutex;
 std::string g_input;
+std::string g_pending_input;
 std::size_t g_input_cursor = 0;
 bool g_term_focus = false;
 int g_scroll = 0;
@@ -80,6 +94,7 @@ std::size_t g_ctx_cursor = 0;
 std::atomic<bool> g_active{false};
 std::atomic<bool> g_running{false};
 std::atomic<bool> g_mouse_want{false};
+std::atomic<bool> g_passive_input{false};
 bool g_mouse_on = false;
 bool g_suspended = false;
 unsigned long g_frame = 0;
@@ -516,6 +531,108 @@ int g_emu_cols = -1;
 int g_emu_h = -1;
 int g_term_max_scroll = 0;
 
+void clamp_scrolls_unlocked() {
+  if (g_scroll < 0) g_scroll = 0;
+  if (g_term_scroll < 0) g_term_scroll = 0;
+  if (g_term_scroll > g_term_max_scroll) g_term_scroll = g_term_max_scroll;
+}
+
+void adjust_scroll(bool up, int col, int row, bool has_position) {
+  std::lock_guard<std::mutex> lk(g_input_mutex);
+  bool term_pane = false;
+  if (has_position) {
+    term_pane = (g_term_y >= 0) ? (row >= g_term_y) : (col >= g_term_x);
+  }
+  if (term_pane) {
+    g_term_scroll += up ? 3 : -3;
+  } else {
+    g_scroll += up ? 3 : -3;
+  }
+  clamp_scrolls_unlocked();
+}
+
+void append_pending_input(const std::string& data) {
+  if (data.empty()) return;
+  std::lock_guard<std::mutex> lk(g_input_mutex);
+  g_pending_input += data;
+}
+
+void process_passive_input(const char* data, std::size_t n) {
+  std::string pending;
+  pending.reserve(n);
+  for (std::size_t i = 0; i < n;) {
+    unsigned char c = static_cast<unsigned char>(data[i]);
+    if (c == 0x1b && i + 2 < n && data[i + 1] == '[') {
+      if (data[i + 2] == '<') {
+        std::size_t j = i + 3;
+        int vals[3] = {0, 0, 0};
+        int vi = 0;
+        int acc = 0;
+        while (j < n && data[j] != 'M' && data[j] != 'm') {
+          char d = data[j];
+          if (d >= '0' && d <= '9') {
+            acc = acc * 10 + (d - '0');
+          } else if (d == ';') {
+            if (vi < 3) vals[vi] = acc;
+            ++vi;
+            acc = 0;
+          }
+          ++j;
+        }
+        if (j < n) {
+          if (vi < 3) vals[vi] = acc;
+          int btn = vals[0];
+          if (btn == 64 || btn == 65) {
+            adjust_scroll(btn == 64, vals[1], vals[2], true);
+            i = j + 1;
+            continue;
+          }
+        }
+      } else if (data[i + 2] == 'M' && i + 5 < n) {
+        int btn = static_cast<unsigned char>(data[i + 3]) - 32;
+        int col = static_cast<unsigned char>(data[i + 4]) - 32;
+        int row = static_cast<unsigned char>(data[i + 5]) - 32;
+        if (btn == 64 || btn == 65) {
+          adjust_scroll(btn == 64, col, row, true);
+          i += 6;
+          continue;
+        }
+      } else if ((data[i + 2] == '5' || data[i + 2] == '6') && i + 3 < n &&
+                 data[i + 3] == '~') {
+        adjust_scroll(data[i + 2] == '5', 0, 0, false);
+        i += 4;
+        continue;
+      }
+    }
+    pending.push_back(data[i]);
+    ++i;
+  }
+  append_pending_input(pending);
+}
+
+void drain_passive_input() {
+  if (!g_passive_input.load()) return;
+  for (;;) {
+    fd_set rfds;
+    FD_ZERO(&rfds);
+    FD_SET(STDIN_FILENO, &rfds);
+    struct timeval tv;
+    tv.tv_sec = 0;
+    tv.tv_usec = 0;
+    int ready = ::select(STDIN_FILENO + 1, &rfds, nullptr, nullptr, &tv);
+    if (ready <= 0) return;
+
+    char buf[512];
+    ssize_t n = ::read(STDIN_FILENO, buf, sizeof(buf));
+    if (n > 0) {
+      process_passive_input(buf, static_cast<std::size_t>(n));
+      continue;
+    }
+    if (n < 0 && errno == EINTR) continue;
+    return;
+  }
+}
+
 std::vector<std::string> pty_pane_lines(int cols, int height, int term_scroll) {
   if (cols < 1) cols = 1;
   if (height < 1) height = 1;
@@ -604,17 +721,19 @@ std::string green_cell_rich(const std::string& content, int width) {
 
 std::string pill_rows(int row, int width) {
   if (row == 1) {
-    std::string content = "  " + pulse_on_green(g_frame) + "\xE2\x97\x86" + std::string(DARK_FG) +
-                          BOLD + " LOREA";
+    std::string content = "  " + pulse_hot(g_frame) + "\xE2\x97\x86" + std::string(DARK_FG) +
+                          BOLD + " OCLI  " + pulse_meter(g_frame, 10) +
+                          std::string(DARK_DIM_FG) + "  live agent";
     return green_cell_rich(content, width);
   }
   if (row == 2) {
     std::string sub = g_status_fn ? strip_ansi(g_status_fn()) : std::string();
     if (static_cast<int>(sub.size()) > width - 4 && width > 5)
       sub = sub.substr(0, static_cast<std::size_t>(width - 5)) + "\xE2\x80\xA6";
-    return green_cell_rich(std::string("  ") + DARK_DIM_FG + sub, width);
+    return green_cell_rich(std::string("  ") + DARK_FG + sub, width);
   }
-  return green_cell("", width, false);
+  return green_cell_rich(std::string("  ") + DARK_DIM_FG +
+                         "/help commands  \xC2\xB7 Ctrl-T shell  \xC2\xB7 PgUp scroll", width);
 }
 
 void compose(std::vector<std::string>& rows, int R, int C) {
@@ -710,10 +829,10 @@ void compose(std::vector<std::string>& rows, int R, int C) {
       int right_x = left_x + left_w + gap;
       (void)right_x;
       if (r == term_top) {
-        std::string head = "  " + pulse_on_green(g_frame) + "\xE2\x96\xB8" + std::string(DARK_FG) +
-                           BOLD + " AI TERMINAL";
+        std::string head = "  " + pulse_hot(g_frame) + "\xE2\x96\xB8" + std::string(DARK_FG) +
+                           BOLD + " SHARED TERMINAL  " + pulse_meter(g_frame + 4, 8);
         if (term_scroll > 0)
-          head += std::string(DARK_DIM_FG) + "   \xE2\x86\x91" + std::to_string(term_scroll);
+          head += std::string(DARK_DIM_FG) + BOLD + "   \xE2\x86\x91" + std::to_string(term_scroll);
         else
           head += std::string(DARK_DIM_FG) + "   live";
         right_cell = green_cell_rich(head, right_w);
@@ -739,15 +858,15 @@ void compose(std::vector<std::string>& rows, int R, int C) {
         std::string caret = blink_on(g_frame) ? "\xE2\x96\x88" : " ";
         if (tfocus) {
           body = pad_left + green_cell_rich(std::string("  ") + DARK_DIM_FG + BOLD +
-                     "\xE2\x96\xB8 shell" + std::string(DARK_DIM_FG) +
-                     "  typing into the terminal \xC2\xB7 Ctrl-T to return", left_w);
+                     "\xE2\x96\xB8 shell focus" + std::string(DARK_DIM_FG) +
+                     "  type live \xC2\xB7 Ctrl-T returns", left_w);
         } else if (input.empty()) {
-          body = pad_left + green_cell_rich(std::string("  ") + DARK_FG + BOLD + "\xE2\x9D\xAF " +
-                     std::string(DARK_DIM_FG) + "Ask anything \xC2\xB7 type to chat  " +
+          body = pad_left + green_cell_rich(std::string("  ") + PINK_FG + BOLD + "\xE2\x9D\xAF " +
+                     std::string(DARK_DIM_FG) + "Ask anything \xC2\xB7 ship mode  " +
                      std::string(DARK_FG) + caret, left_w);
         } else {
           std::string shown = clip_visible(strip_ansi(input), left_w - 5);
-          body = pad_left + green_cell_rich(std::string("  ") + DARK_FG + BOLD + "\xE2\x9D\xAF " +
+          body = pad_left + green_cell_rich(std::string("  ") + PINK_FG + BOLD + "\xE2\x9D\xAF " +
                      std::string(DARK_FG) + shown + std::string(DARK_FG) + caret, left_w);
         }
       }
@@ -796,8 +915,9 @@ void compose(std::vector<std::string>& rows, int R, int C) {
                                : std::string(static_cast<std::size_t>(width), ' ');
         emit(r, pad_left + cell);
       } else if (r == term_label) {
-        std::string lbl = std::string(pulse_neon(g_frame)) + BOLD + "\xE2\x96\xB8 AI TERMINAL" +
-                          RESET + GREEN_DIM_FG + (term_scroll > 0 ? "  \xE2\x86\x91" + std::to_string(term_scroll) : std::string("  live"));
+        std::string lbl = std::string(pulse_neon(g_frame)) + BOLD + "\xE2\x96\xB8 SHARED TERMINAL  " +
+                          pulse_meter(g_frame + 4, 6) + RESET + GREEN_DIM_FG +
+                          (term_scroll > 0 ? "  \xE2\x86\x91" + std::to_string(term_scroll) : std::string("  live"));
         emit(r, pad_left + std::string(GREEN_DIM_FG) + fit_ansi(lbl, width) + RESET);
       } else {
         int idx = tl_start + (r - term_top);
@@ -815,12 +935,13 @@ void compose(std::vector<std::string>& rows, int R, int C) {
         std::string caret = blink_on(g_frame) ? "\xE2\x96\x88" : " ";
         if (tfocus)
           body = pad_left + green_cell_rich(std::string("  ") + DARK_DIM_FG + BOLD +
-                     "\xE2\x96\xB8 shell \xC2\xB7 Ctrl-T to return", width);
+                     "\xE2\x96\xB8 shell focus \xC2\xB7 Ctrl-T returns", width);
         else if (input.empty())
-          body = pad_left + green_cell_rich(std::string("  ") + DARK_FG + BOLD + "\xE2\x9D\xAF " +
-                     std::string(DARK_DIM_FG) + "Ask anything  " + std::string(DARK_FG) + caret, width);
+          body = pad_left + green_cell_rich(std::string("  ") + PINK_FG + BOLD + "\xE2\x9D\xAF " +
+                     std::string(DARK_DIM_FG) + "Ask anything \xC2\xB7 ship mode  " +
+                     std::string(DARK_FG) + caret, width);
         else
-          body = pad_left + green_cell_rich(std::string("  ") + DARK_FG + BOLD + "\xE2\x9D\xAF " +
+          body = pad_left + green_cell_rich(std::string("  ") + PINK_FG + BOLD + "\xE2\x9D\xAF " +
                      std::string(DARK_FG) + clip_visible(strip_ansi(input), width - 5) +
                      std::string(DARK_FG) + caret, width);
       }
@@ -835,6 +956,8 @@ void render_loop() {
   std::vector<std::string> last;
   int last_R = -1, last_C = -1;
   while (g_running.load()) {
+    drain_passive_input();
+
     struct winsize ws;
     std::memset(&ws, 0, sizeof(ws));
     int R = 24, C = 80;
@@ -855,7 +978,7 @@ void render_loop() {
 
     std::string out = "\033[?2026h";
     bool any = false;
-    bool want_mouse = g_mouse_want.load();
+    bool want_mouse = g_mouse_want.load() || g_passive_input.load();
     if (want_mouse != g_mouse_on) {
       out += want_mouse ? "\033[?1000h\033[?1006h" : "\033[?1000l\033[?1006l";
       g_mouse_on = want_mouse;
@@ -879,6 +1002,10 @@ void render_loop() {
 }  // namespace
 
 bool live_active() { return g_active.load(); }
+
+void live_set_generating(bool on) {
+  g_passive_input.store(on);
+}
 
 void live_set_status_line(const std::string& line) {
   std::lock_guard<std::mutex> lk(g_status_mutex);
@@ -978,10 +1105,20 @@ std::string live_read_line(const std::vector<std::string>* history) {
 
   char buf[256];
   for (;;) {
-    ssize_t n = ::read(STDIN_FILENO, buf, sizeof(buf));
-    if (n <= 0) {
-      if (n < 0 && errno == EINTR) continue;
-      return std::string("/exit");
+    std::string pending;
+    {
+      std::lock_guard<std::mutex> lk(g_input_mutex);
+      if (!g_pending_input.empty()) pending.swap(g_pending_input);
+    }
+
+    const char* data = pending.empty() ? buf : pending.data();
+    ssize_t n = static_cast<ssize_t>(pending.size());
+    if (pending.empty()) {
+      n = ::read(STDIN_FILENO, buf, sizeof(buf));
+      if (n <= 0) {
+        if (n < 0 && errno == EINTR) continue;
+        return std::string("/exit");
+      }
     }
 
     bool focus_terminal;
@@ -993,7 +1130,7 @@ std::string live_read_line(const std::vector<std::string>* history) {
     if (focus_terminal) {
       std::string passthrough;
       for (ssize_t i = 0; i < n; ++i) {
-        unsigned char c = static_cast<unsigned char>(buf[i]);
+        unsigned char c = static_cast<unsigned char>(data[i]);
         if (c == 0x14) {
           std::lock_guard<std::mutex> lk(g_input_mutex);
           g_term_focus = false;
@@ -1011,7 +1148,7 @@ std::string live_read_line(const std::vector<std::string>* history) {
     }
 
     for (ssize_t i = 0; i < n; ++i) {
-      unsigned char c = static_cast<unsigned char>(buf[i]);
+      unsigned char c = static_cast<unsigned char>(data[i]);
 
       if (cc_armed && c != 0x03) {
         cc_armed = false;
@@ -1063,15 +1200,15 @@ std::string live_read_line(const std::vector<std::string>* history) {
         g_input.erase(0, g_input_cursor);
         g_input_cursor = 0;
       } else if (c == 0x1b) {
-        if (i + 2 < n && buf[i + 1] == '[') {
-          char code = buf[i + 2];
+        if (i + 2 < n && data[i + 1] == '[') {
+          char code = data[i + 2];
           if (code == '<') {
             std::size_t j = i + 3;
             int vals[3] = {0, 0, 0};
             int vi = 0;
             int acc = 0;
-            while (j < static_cast<std::size_t>(n) && buf[j] != 'M' && buf[j] != 'm') {
-              char d = buf[j];
+            while (j < static_cast<std::size_t>(n) && data[j] != 'M' && data[j] != 'm') {
+              char d = data[j];
               if (d >= '0' && d <= '9')
                 acc = acc * 10 + (d - '0');
               else if (d == ';') {
@@ -1146,12 +1283,12 @@ std::string live_read_line(const std::vector<std::string>* history) {
           } else if (code == '5') {
             std::lock_guard<std::mutex> lk(g_input_mutex);
             g_scroll += 5;
-            if (i + 3 < n && buf[i + 3] == '~') i += 3; else i += 2;
+            if (i + 3 < n && data[i + 3] == '~') i += 3; else i += 2;
           } else if (code == '6') {
             std::lock_guard<std::mutex> lk(g_input_mutex);
             g_scroll -= 5;
             if (g_scroll < 0) g_scroll = 0;
-            if (i + 3 < n && buf[i + 3] == '~') i += 3; else i += 2;
+            if (i + 3 < n && data[i + 3] == '~') i += 3; else i += 2;
           } else {
             i += 2;
           }
@@ -1159,12 +1296,12 @@ std::string live_read_line(const std::vector<std::string>* history) {
       } else if (c >= 0x20) {
         std::size_t start = static_cast<std::size_t>(i);
         std::size_t len = 1;
-        while (i + 1 < n && is_continuation(static_cast<unsigned char>(buf[i + 1]))) {
+        while (i + 1 < n && is_continuation(static_cast<unsigned char>(data[i + 1]))) {
           ++i;
           ++len;
         }
         std::lock_guard<std::mutex> lk(g_input_mutex);
-        g_input.insert(g_input_cursor, std::string(buf + start, len));
+        g_input.insert(g_input_cursor, std::string(data + start, len));
         g_input_cursor += len;
       }
     }
@@ -1199,6 +1336,7 @@ bool live_suspend() {
   full_write(g_real_fd, reset, std::strlen(reset));
   g_mouse_on = false;
   g_mouse_want.store(false);
+  g_passive_input.store(false);
 
   g_suspended = true;
   return true;
@@ -1266,6 +1404,7 @@ void live_end() {
   full_write(g_real_fd, leave, std::strlen(leave));
   g_mouse_on = false;
   g_mouse_want.store(false);
+  g_passive_input.store(false);
 
   if (g_termios_saved) {
     ::tcsetattr(STDIN_FILENO, TCSAFLUSH, &g_saved_termios);
@@ -1289,6 +1428,7 @@ void live_end() {
   {
     std::lock_guard<std::mutex> lk(g_input_mutex);
     g_input.clear();
+    g_pending_input.clear();
     g_input_cursor = 0;
     g_term_focus = false;
     g_scroll = 0;

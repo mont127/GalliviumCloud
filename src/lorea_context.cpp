@@ -376,6 +376,33 @@ std::vector<Message> LOREA::trim_recent_context(const std::vector<Message>& mess
     return trimmed;
 }
 
+void LOREA::sync_context_budget() {
+    auto parse_ctx = [](const std::string& raw) -> long {
+        std::string s;
+        for (char c : raw)
+            if (!std::isspace(static_cast<unsigned char>(c)))
+                s += static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+        if (s.empty()) return 0;
+        double mult = 1.0;
+        if (s.back() == 'k') { mult = 1000; s.pop_back(); }
+        else if (s.back() == 'm') { mult = 1000000; s.pop_back(); }
+        try { return static_cast<long>(std::stod(s) * mult); } catch (...) { return 0; }
+    };
+    long ctx = 0;
+    if (const char* e = std::getenv("LOREA_CONTEXT")) ctx = parse_ctx(e);
+    if (ctx <= 0) {
+        std::string lm = model_name;
+        for (auto& c : lm) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+        if (lm.find("qwythos") != std::string::npos || lm.find("-1m") != std::string::npos)
+            ctx = 65536;   // Qwythos 1M model -> a big, RAM-safe default (4x the old 16k). A literal
+                           // 1M KV cache needs far more than 32GB; raise via LOREA_CONTEXT (e.g. 1M).
+    }
+    if (ctx <= 0) ctx = COMPACT_TOKEN_BUDGET;
+    if (ctx < 2000) ctx = 2000;
+    if (ctx > 4000000) ctx = 4000000;
+    context_budget = static_cast<int>(ctx);
+}
+
 int LOREA::estimate_context_tokens() {
     long long total = 0;
     for (const auto& message : messages) {
@@ -672,9 +699,9 @@ void LOREA::persist_outputs(const std::vector<std::string>& outs) {
 
 void LOREA::compact_history() {
     int estimated = estimate_context_tokens();
-    if (messages.size() <= static_cast<std::size_t>(HISTORY_THRESHOLD) && estimated <= COMPACT_TOKEN_BUDGET)
+    if (messages.size() <= static_cast<std::size_t>(HISTORY_THRESHOLD) && estimated <= context_budget)
         return;
-    std::string reason = (estimated > COMPACT_TOKEN_BUDGET) ? "token budget" : "message count";
+    std::string reason = (estimated > context_budget) ? "token budget" : "message count";
     log_info("Compacting history (~" + std::to_string(estimated) + " tokens, " +
              std::to_string(messages.size()) + " messages, trigger: " + reason + ")...");
 
@@ -686,7 +713,7 @@ void LOREA::compact_history() {
     if (middle_messages.empty()) {
         std::vector<Message> body = trim_recent_context(vslice(messages, 1, messages.size()));
         bool still_oversized = (messages.size() > static_cast<std::size_t>(HISTORY_THRESHOLD)) ||
-                               (estimate_context_tokens() > COMPACT_TOKEN_BUDGET);
+                               (estimate_context_tokens() > context_budget);
         if (still_oversized && body.size() > 4) {
             std::size_t keep_tail = std::max<std::size_t>(4, static_cast<std::size_t>(COMPACT_RECENT_MESSAGES / 2));
             std::vector<Message> tail = vlast(body, keep_tail);
@@ -818,17 +845,19 @@ std::string LOREA::tool_reminder_text() {
                         "find_files, grep, web_search, read_url, http_request, git_status, git_diff";
     if (allow_spawn_agents) names += ", spawn_agents";
     return std::string(
-        "[tool protocol — reminder] To take an action, output exactly ONE tool call and nothing else: "
+        "[OCLI tool protocol reminder] To take an action, output exactly ONE tool call and nothing else: "
         "<tools>{\"name\":\"TOOL\",\"arguments\":{...}}</tools> "
         "(e.g. <tools>{\"name\":\"grep\",\"arguments\":{\"pattern\":\"eval(\",\"path\":\"app.py\"}}</tools>). "
-        "Provide EVERY required argument as real JSON — required args per tool: "
+        "Provide EVERY required argument as valid JSON; no markdown fences, placeholders, comments, or partial commands. "
+        "Required args per tool: "
         "read_file{path}, list_files{path}, grep{pattern,path}, search_files/find_files{query,path}, "
         "run_cmd{command}, test_cmd{command}, write_file{path,content}, web_search{query}, read_url{url}, "
-        "http_request{url,method,data}, git_status{}, git_diff{}. Give a COMPLETE command (never a partial like `grep -n` with no pattern), "
-        "and NEVER repeat a call you already made this turn — its output is already in the conversation above. "
-        "Never describe an action in prose instead of calling the tool, and never invent tool output. "
-        "IMPORTANT: when you ALREADY have what the request needs — for example you have read the file you were "
-        "asked to analyze — do NOT keep calling tools. Write your complete answer now in plain natural language. "
+        "http_request{url,method,data}, git_status{}, git_diff{}. "
+        "For file edits, read the existing file first, then call write_file with the COMPLETE final content for that path; "
+        "do not describe an edit in prose and do not use shell heredocs/redirection as a substitute for write_file. "
+        "Give complete bounded commands (never a partial like `grep -n` with no pattern), and never repeat a call you already made this turn; "
+        "its output is already in the conversation above. Never invent tool output. Never output <voice_note> blocks. "
+        "When you already have what the request needs, stop calling tools and write the complete final answer in plain natural language. "
         "Available tools: ") + names + ".";
 }
 
@@ -925,13 +954,49 @@ std::vector<Message> LOREA::ephemeral_reminders() {
 
 std::vector<Message> LOREA::server_messages() {
     std::vector<Message> prepared;
-    for (const auto& message : messages) {
 
+    // Collect all system-role content first — many models (Qwen3, etc.) require
+    // the system message to be strictly at position 0 in the messages array.
+    std::string system_content;
+    auto append_system = [&](const std::string& s) {
+        if (s.empty()) return;
+        if (!system_content.empty()) system_content += "\n\n";
+        system_content += s;
+    };
+
+    // Pull system messages out of main history
+    for (const auto& message : messages) {
+        std::string role;
+        const json* rp = find_key(message, "role");
+        if (rp && rp->is_string()) role = rp->get<std::string>();
+        if (role == "system") append_system(content_or_empty(message));
+    }
+
+    // Pull system messages out of ephemeral reminders
+    for (const auto& r : ephemeral_reminders()) {
+        std::string role;
+        const json* rp = find_key(r, "role");
+        if (rp && rp->is_string()) role = rp->get<std::string>();
+        if (role == "system") append_system(content_or_empty(r));
+    }
+
+    // Prepend merged system message if any
+    if (!system_content.empty()) {
+        json sys = json::object();
+        sys["role"] = "system";
+        sys["content"] = system_content;
+        prepared.push_back(std::move(sys));
+    }
+
+    // Now append non-system messages from main history
+    for (const auto& message : messages) {
         std::string role;
         const json* rp = find_key(message, "role");
         if (!rp) role = "user";
         else if (rp->is_string()) role = rp->get<std::string>();
         else role = "";
+
+        if (role == "system") continue; // already handled above
 
         std::string content = content_or_empty(message);
 
@@ -943,7 +1008,7 @@ std::vector<Message> LOREA::server_messages() {
             out["role"] = "user";
             out["content"] = "Tool result from " + name + ":\n" + content;
             prepared.push_back(std::move(out));
-        } else if (role == "system" || role == "user" || role == "assistant") {
+        } else if (role == "user" || role == "assistant") {
             if (role == "assistant") {
                 const json* tcp = find_key(message, "tool_calls");
                 bool has_tc = tcp && json_truthy(*tcp);
@@ -986,7 +1051,15 @@ std::vector<Message> LOREA::server_messages() {
             prepared.push_back(std::move(out));
         }
     }
-    for (auto& r : ephemeral_reminders()) prepared.push_back(std::move(r));
+
+    // Append non-system ephemeral reminders at the end
+    for (auto& r : ephemeral_reminders()) {
+        std::string role;
+        const json* rp = find_key(r, "role");
+        if (rp && rp->is_string()) role = rp->get<std::string>();
+        if (role != "system") prepared.push_back(std::move(r));
+    }
+
     return prepared;
 }
 

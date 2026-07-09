@@ -81,6 +81,9 @@ const std::string LOREA_CYBER_GGUF =
     : path_is_file(CYBER_GGUF_V41_LOCAL) ? CYBER_GGUF_V41_LOCAL
     : CYBER_GGUF_V42_LOCAL;
 
+const std::string QWYTHOS_GGUF =
+    expanduser("~/models/Qwythos-9B-Claude-Mythos-5-1M-Q4_K_M.gguf");
+
 const std::string LOREA_DIR = expanduser("~/lorea-ft/lorea-coder-30b-a3b-v3-re");
 
 const std::vector<std::string> OPENAI_API_MODELS = {
@@ -135,18 +138,18 @@ const std::vector<std::string> MLX_MODELS = {
     "mlx-community/DeepSeek-V4-Flash-2bit-DQ",
 };
 const std::vector<std::string> GGUF_MODELS = {
-    "Qwen2.5-Coder-1.5B-Instruct-GGUF", "Llama-3.1-8B-Instruct-GGUF",
-    "Llama-3.2-3B-Instruct-GGUF", "Llama-3.3-70B-Instruct-GGUF",
-    "Qwen2.5-Coder-7B-Instruct-GGUF", "Qwen2.5-Coder-14B-Instruct-GGUF",
-    "Qwen2.5-Coder-32B-Instruct-GGUF", "Qwen3-8B-GGUF", "Qwen3-14B-GGUF",
-    "Qwen3-32B-GGUF", "Qwen3-Coder-GGUF", "Mistral-7B-Instruct-GGUF",
-    "Mistral-Nemo-12B-Instruct-GGUF", "Mixtral-8x7B-Instruct-GGUF",
-    "Gemma-2-9B-Instruct-GGUF", "Gemma-3-GGUF", "Phi-3-mini-GGUF", "Phi-4-GGUF",
-    "DeepSeek-R1-Distill-Qwen-7B-GGUF", "DeepSeek-R1-Distill-Qwen-14B-GGUF",
-    "DeepSeek-R1-Distill-Qwen-32B-GGUF", "DeepSeek-Coder-V2-Lite-GGUF",
-    "CodeLlama-7B-Instruct-GGUF", "CodeLlama-13B-Instruct-GGUF", "StarCoder2-7B-GGUF",
-    "Yi-Coder-9B-GGUF", "Nous-Hermes-2-Mistral-7B-GGUF", "OpenHermes-2.5-Mistral-7B-GGUF",
-    "Dolphin-Llama3-GGUF", "Dolphin-Mistral-GGUF", "froggeric/Qwen3.6-27B-MTP-GGUF",
+    "Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF", "bartowski/Llama-3.1-8B-Instruct-GGUF",
+    "bartowski/Llama-3.2-3B-Instruct-GGUF", "bartowski/Llama-3.3-70B-Instruct-GGUF",
+    "Qwen/Qwen2.5-Coder-7B-Instruct-GGUF", "Qwen/Qwen2.5-Coder-14B-Instruct-GGUF",
+    "Qwen/Qwen2.5-Coder-32B-Instruct-GGUF", "Qwen/Qwen3-8B-GGUF", "Qwen/Qwen3-14B-GGUF",
+    "Qwen/Qwen3-32B-GGUF", "Qwen/Qwen3-Coder-GGUF", "bartowski/Mistral-7B-Instruct-v0.3-GGUF",
+    "bartowski/Mistral-Nemo-12B-Instruct-GGUF", "bartowski/Mixtral-8x7B-Instruct-v0.1-GGUF",
+    "bartowski/gemma-2-9b-it-GGUF", "bartowski/gemma-3-GGUF", "bartowski/Phi-3-mini-4k-instruct-GGUF", "bartowski/phi-4-GGUF",
+    "bartowski/DeepSeek-R1-Distill-Qwen-7B-GGUF", "bartowski/DeepSeek-R1-Distill-Qwen-14B-GGUF",
+    "bartowski/DeepSeek-R1-Distill-Qwen-32B-GGUF", "bartowski/DeepSeek-Coder-V2-Lite-Instruct-GGUF",
+    "TheBloke/CodeLlama-7B-Instruct-GGUF", "TheBloke/CodeLlama-13B-Instruct-GGUF", "bartowski/starcoder2-7b-GGUF",
+    "bartowski/Yi-Coder-9B-Chat-GGUF", "TheBloke/Nous-Hermes-2-Mistral-7B-DPO-GGUF", "TheBloke/OpenHermes-2.5-Mistral-7B-GGUF",
+    "bartowski/dolphin-2.9-llama3-8b-GGUF", "TheBloke/dolphin-2.5-mixtral-8x7b-GGUF", "froggeric/Qwen3.6-27B-MTP-GGUF",
     "Jiunsong/supergemma4-26b-uncensored-gguf-v2",
     "hesamation/Qwen3.6-35B-A3B-Claude-4.6-Opus-Reasoning-Distilled-GGUF",
     "kai-os/Carnice-V2-27b-GGUF", "AtomicChat/gemma-4-26B-A4B-it-assistant-GGUF",
@@ -162,7 +165,7 @@ const std::vector<std::string> AIRLLM_MODELS = {
     "google/gemma-2-27b-it", "deepseek-ai/DeepSeek-Coder-V2-Lite-Instruct",
 };
 const std::map<std::string, std::string> LLAMA_CPP_URLS = {
-    {"Qwen2.5-Coder-1.5B-Instruct-GGUF",
+    {"Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF",
      "https://huggingface.co/Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF/resolve/main/"
      "qwen2.5-coder-1.5b-instruct-q4_k_m.gguf"},
 };
@@ -180,8 +183,8 @@ const std::map<std::string, std::string> BACKEND_DEFAULT_URLS = {
 };
 
 const std::map<std::string, std::string> BACKEND_DEFAULT_MODELS = {
-    {"ollama",    "qwen3.6:27b-coding-nvfp4"},
-    {"llama-cpp", LOREA_CYBER_GGUF},
+    {"ollama",    path_is_file(QWYTHOS_GGUF) ? "qwythos" : "qwen3.6:27b-coding-nvfp4"},
+    {"llama-cpp", path_is_file(QWYTHOS_GGUF) ? QWYTHOS_GGUF : LOREA_CYBER_GGUF},
     {"mlx",       LOREA_CYBER_DIR},
     {"airllm",    "Qwen/Qwen2.5-72B-Instruct"},
     {"openai",    "gpt-4o"},
@@ -238,33 +241,41 @@ const std::map<std::string, EffortLevel>& effort_levels() {
     static const std::map<std::string, EffortLevel> levels = {
         {"basic", {"Basic", Colors::GREEN,
             "Effort level: BASIC. Answer directly and efficiently. Use tools only when "
-            "needed and keep it focused — don't over-investigate."}},
+            "needed and keep it focused — don't over-investigate. Keep any thinking brief: "
+            "at most a sentence or two of reasoning before you answer."}},
         {"tuned", {"Tuned", Colors::CYAN,
             "Effort level: TUNED. Put in solid effort: investigate a step deeper than the "
             "obvious, check the relevant code paths, and back every conclusion with "
-            "specific evidence from the code before you answer."}},
+            "specific evidence before you answer. Before answering, think it through "
+            "step by step inside <thought>...</thought> — outline the approach and the key "
+            "steps first, then give the answer."}},
         {"elite", {"Elite", Colors::YELLOW,
             "Effort level: ELITE. Put in HIGH effort: be systematic and thorough. Trace "
             "data flows from every input source to every sink, search multiple files and "
             "patterns, weigh edge cases and non-obvious vectors, and verify each claim "
-            "against the actual code. Do not conclude until you have genuinely checked — "
-            "show your reasoning and the evidence."}},
+            "against the actual evidence. Think at length FIRST inside <thought>...</thought>: "
+            "lay out the full approach, work through each step, question your assumptions, "
+            "and check your logic before you conclude. Do not answer until you have genuinely "
+            "reasoned it out."}},
         {"mythic", {"Mythic", Colors::VIOLET,
-            "Effort level: MYTHIC — MAXIMUM effort, hold nothing back. Exhaustively analyze "
-            "the target: enumerate every relevant code path, every input that reaches every "
-            "sink, cross-reference all related files, and weigh every plausible attack "
-            "vector and edge case. Verify each finding against the real code — never assume. "
-            "Do NOT stop early, give up, or say 'I'm done' until the task is fully and "
-            "verifiably complete; if one approach is exhausted, try another. Produce the "
-            "deepest, most rigorous analysis you are capable of."}},
+            "Effort level: MYTHIC — MAXIMUM effort, hold nothing back. Think EXTENSIVELY "
+            "inside <thought>...</thought> before answering: enumerate multiple approaches, "
+            "reason through each one, consider alternatives, counter-examples and edge cases, "
+            "and self-critique your reasoning before committing. Exhaustively analyze the "
+            "target: every relevant code path, every input that reaches every sink, all "
+            "related files, every plausible vector. Verify each finding against reality — "
+            "never assume. Do NOT stop early or say 'I'm done' until the task is fully and "
+            "verifiably complete; if one approach is exhausted, try another. Spend real "
+            "deliberation — the deeper you think, the better."}},
         {"beyond", {"GO BEYOND", Colors::AMBER,
-            "Effort level: GO BEYOND — transcend the task. Everything in MYTHIC applies, "
-            "and then you go FURTHER: don't just answer what was asked — anticipate what "
-            "the user will need next, surface findings and risks they didn't think to ask "
-            "about, and deliver the fix AND the hardening AND the detection. Exhaust every "
-            "avenue, cross-check every claim twice, and produce work that is genuinely "
-            "exceptional — more rigor, more depth, more value than expected. Never settle, "
-            "never stop short, and never call it done while anything remains to strengthen."}},
+            "Effort level: GO BEYOND — transcend the task. Everything in MYTHIC applies, and "
+            "you deliberate to the ABSOLUTE MAXIMUM inside <thought>...</thought>: reason "
+            "through everything from multiple angles, red-team your own conclusions, ask what "
+            "could be wrong and check it, and refine your thinking to exhaustion before you "
+            "answer. Then go FURTHER in the answer: anticipate what the user needs next, "
+            "surface risks they didn't ask about, and deliver the fix AND the hardening AND "
+            "the detection. Cross-check every claim twice. Never settle, never stop short, "
+            "and never call it done while anything remains to strengthen."}},
     };
     return levels;
 }
@@ -1099,7 +1110,16 @@ std::shared_ptr<Subprocess> spawn_process(const std::vector<std::string>& argv,
 
         ::signal(SIGPIPE, SIG_DFL);
         if (devnull_output) {
-            int dn = ::open("/dev/null", O_WRONLY);
+            std::string log_name = "/dev/null";
+            if (!argv.empty()) {
+                std::string exe = argv[0];
+                if (exe.find("llama-server") != std::string::npos) {
+                    log_name = "/tmp/lorea_llama_server.log";
+                } else if (exe.find("mlx") != std::string::npos) {
+                    log_name = "/tmp/lorea_mlx_server.log";
+                }
+            }
+            int dn = ::open(log_name.c_str(), O_WRONLY | O_CREAT | O_TRUNC, 0644);
             if (dn >= 0) {
                 ::dup2(dn, STDOUT_FILENO);
                 ::dup2(dn, STDERR_FILENO);

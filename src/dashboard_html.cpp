@@ -1,6 +1,6 @@
 #include "dashboard.hpp"
 
-// Self-contained LOREA web dashboard.
+// Self-contained OCLI web dashboard.
 // One HTML document: inline <style> + <script>, no external assets.
 // Talks to the server defined in src/dashboard.cpp over the FIXED CONTRACT
 // endpoints (/api/info, /api/history, /api/chat) plus the shared-terminal
@@ -18,41 +18,57 @@ const char* DASHBOARD_HTML = R"DASH(<!DOCTYPE html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>LOREA &middot; dashboard</title>
+<title>OCLI &middot; control dashboard</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:ital,wght@0,400;0,500;0,600;0,700;0,800;1,400&display=swap">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.min.css">
 <script src="https://cdn.jsdelivr.net/npm/xterm@5.3.0/lib/xterm.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.8.0/lib/xterm-addon-fit.min.js"></script>
 <style>
   :root{
-    --bg:#070a08;
-    --grid:rgba(103,185,106,.10);
-    --green:#67b96a;
-    --green-bright:#7fd083;
-    --green-deep:#2c5b2f;
-    --green-panel:#244a27;
-    --green-panel-2:#1c3b1f;
-    --panel:#0e120f;
-    --panel-2:#11160f;
-    --line:rgba(103,185,106,.18);
-    --ink:#dfe9df;
-    --ink-dim:#9bb29c;
-    --ink-faint:#6f846f;
-    --radius:22px;
-    --radius-sm:14px;
+    --bg:#020617;
+    --grid:rgba(148,163,184,.05);
+    --green:#22c55e;
+    --green-bright:#4ade80;
+    --blue:#22c55e;          /* accent unified to green for a cohesive coding-tool identity */
+    --blue-bright:#4ade80;
+    --amber:#f2c14e;
+    --panel:#0b1220;
+    --panel-2:#0a0f1c;
+    --panel-3:#0c1512;
+    --line:rgba(148,163,184,.14);
+    --ink:#f8fafc;
+    --ink-dim:#94a3b8;
+    --ink-faint:#64748b;
+    --accent-glow:rgba(34,197,94,.30);
+    --radius:14px;
+    --radius-sm:10px;
+    --mono:"JetBrains Mono",ui-monospace,"SF Mono",Menlo,Consolas,"Roboto Mono",monospace;
   }
   *{box-sizing:border-box}
   html,body{height:100%}
   body{
     margin:0;
     color:var(--ink);
-    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
-    background-color:var(--bg);
-    background-image:radial-gradient(var(--grid) 1px, transparent 1px);
-    background-size:22px 22px;
-    background-position:-11px -11px;
+    font-family:var(--mono);
+    font-size:14px;
+    letter-spacing:.01em;
+    background:
+      radial-gradient(1100px 560px at 12% -8%, rgba(34,197,94,.11), transparent 55%),
+      radial-gradient(920px 520px at 108% 112%, rgba(34,197,94,.07), transparent 52%),
+      var(--bg);
+    background-attachment:fixed;
     -webkit-font-smoothing:antialiased;
   }
-  .mono{font-family:"SF Mono",ui-monospace,Menlo,Consolas,"Roboto Mono",monospace}
+  .mono{font-family:var(--mono)}
+  ::selection{background:rgba(34,197,94,.30);color:#eafff2}
+  a:focus-visible,button:focus-visible,textarea:focus-visible{
+    outline:2px solid var(--green-bright);outline-offset:2px;border-radius:8px;
+  }
+  @media (prefers-reduced-motion:reduce){
+    *{animation-duration:.001ms !important;transition-duration:.001ms !important;scroll-behavior:auto !important}
+  }
 
   /* ---- top-level responsive grid ---- */
   .app{
@@ -92,21 +108,23 @@ const char* DASHBOARD_HTML = R"DASH(<!DOCTYPE html>
   .pill{
     display:inline-flex;
     align-items:center;
-    gap:9px;
-    background:var(--green);
-    color:#06210a;
+    gap:10px;
+    background:linear-gradient(135deg,var(--green-bright),var(--green));
+    color:#04140a;
     font-weight:800;
-    letter-spacing:.14em;
-    font-size:15px;
+    letter-spacing:.24em;
+    font-size:14px;
     padding:11px 20px;
-    border-radius:999px;
-    box-shadow:0 6px 22px rgba(103,185,106,.30), inset 0 0 0 1px rgba(255,255,255,.18);
+    border-radius:12px;
+    box-shadow:0 0 0 1px rgba(74,222,128,.45), 0 10px 34px var(--accent-glow);
   }
   .pill .dot{
     width:9px;height:9px;border-radius:50%;
-    background:#06210a;
-    box-shadow:0 0 0 3px rgba(6,33,10,.25);
+    background:#04140a;
+    box-shadow:0 0 0 3px rgba(4,20,10,.28);
+    animation:pulseDot 1.8s ease-in-out infinite;
   }
+  @keyframes pulseDot{0%,100%{opacity:.5;transform:scale(.88)}50%{opacity:1;transform:scale(1.18)}}
   .subtitle{color:var(--ink-dim);font-size:13px;letter-spacing:.02em}
   .meta{
     margin-left:auto;
@@ -120,36 +138,44 @@ const char* DASHBOARD_HTML = R"DASH(<!DOCTYPE html>
     display:inline-flex;align-items:center;gap:7px;
     font-size:12px;
     color:var(--ink-dim);
-    background:rgba(103,185,106,.06);
+    background:rgba(148,163,184,.06);
     border:1px solid var(--line);
     padding:7px 12px;
-    border-radius:999px;
+    border-radius:10px;
     white-space:nowrap;
+    transition:border-color .16s ease, background .16s ease, transform .16s ease;
   }
+  .chip:hover{transform:translateY(-1px);border-color:rgba(34,197,94,.4)}
+  .chip.on{border-color:rgba(34,197,94,.42);background:rgba(34,197,94,.10)}
   .chip b{color:var(--ink);font-weight:600}
   .chip .k{color:var(--ink-faint);text-transform:uppercase;letter-spacing:.08em;font-size:10px}
   .chip.on b{color:var(--green-bright)}
-  .chip a{color:var(--green-bright);text-decoration:none}
+  .chip a{color:var(--blue-bright);text-decoration:none}
   .chip a:hover{text-decoration:underline}
 
   /* ---- main conversation panel ---- */
   .main{
     grid-area:main;
     min-height:0;
+    position:relative;
     display:flex;
     flex-direction:column;
     background:linear-gradient(180deg,var(--panel),var(--panel-2));
     border:1px solid var(--line);
     border-radius:var(--radius);
-    box-shadow:0 24px 60px rgba(0,0,0,.45);
+    box-shadow:0 24px 54px rgba(0,0,0,.45);
     overflow:hidden;
+  }
+  .main::before,.term::before{
+    content:"";position:absolute;left:0;right:0;top:0;height:1px;
+    background:linear-gradient(90deg,transparent,rgba(34,197,94,.55),transparent);
   }
   .main-head{
     display:flex;align-items:center;gap:10px;
     padding:16px 20px;
     border-bottom:1px solid var(--line);
   }
-  .main-head .glyph{color:var(--green);font-size:15px}
+  .main-head .glyph{color:var(--blue);font-size:15px}
   .main-head .t{font-size:14px;font-weight:600;letter-spacing:.01em}
   .main-head .s{margin-left:auto;color:var(--ink-faint);font-size:12px}
 
@@ -178,18 +204,20 @@ const char* DASHBOARD_HTML = R"DASH(<!DOCTYPE html>
   }
   .msg.user{align-self:flex-end;align-items:flex-end}
   .msg.user .bubble{
-    background:rgba(103,185,106,.14);
-    border:1px solid rgba(103,185,106,.30);
+    background:rgba(34,197,94,.13);
+    border:1px solid rgba(34,197,94,.32);
     color:var(--ink);
   }
   .msg.assistant{align-self:flex-start}
-  .msg.assistant .who{color:var(--green)}
+  .msg.assistant .who{color:var(--blue)}
   .msg.assistant .bubble{
-    background:rgba(11,18,12,.85);
+    background:rgba(12,21,16,.9);
     border:1px solid var(--line);
-    color:var(--green-bright);
-    font-family:"SF Mono",ui-monospace,Menlo,Consolas,"Roboto Mono",monospace;
+    border-left:2px solid rgba(34,197,94,.5);
+    color:var(--ink);
+    font-family:var(--mono);
     font-size:13px;
+    line-height:1.6;
   }
   .empty{color:var(--ink-faint);font-size:13px;margin:auto;text-align:center;padding:30px}
 
@@ -197,13 +225,13 @@ const char* DASHBOARD_HTML = R"DASH(<!DOCTYPE html>
     align-self:flex-start;
     display:none;
     align-items:center;gap:8px;
-    color:var(--green);font-size:12px;
+    color:var(--blue);font-size:12px;
     padding:4px 2px;
   }
   .typing.show{display:flex}
   .typing .ds{display:inline-flex;gap:4px}
   .typing .ds i{
-    width:7px;height:7px;border-radius:50%;background:var(--green);
+    width:7px;height:7px;border-radius:50%;background:var(--blue);
     animation:blink 1.2s infinite ease-in-out;
   }
   .typing .ds i:nth-child(2){animation-delay:.2s}
@@ -217,17 +245,19 @@ const char* DASHBOARD_HTML = R"DASH(<!DOCTYPE html>
     display:flex;
     align-items:flex-end;
     gap:10px;
-    background:linear-gradient(180deg,var(--green),#56a85a);
-    border-radius:18px;
-    box-shadow:0 10px 30px rgba(103,185,106,.25), inset 0 0 0 1px rgba(255,255,255,.16);
+    background:linear-gradient(180deg,var(--green-bright),var(--green));
+    border-radius:var(--radius);
+    box-shadow:0 12px 34px var(--accent-glow), inset 0 0 0 1px rgba(255,255,255,.14);
+    transition:box-shadow .18s ease, transform .18s ease;
   }
+  .composer:focus-within{box-shadow:0 14px 40px var(--accent-glow), inset 0 0 0 1px rgba(255,255,255,.3), 0 0 0 3px rgba(34,197,94,.25)}
   .composer textarea{
     flex:1 1 auto;
     resize:none;
     border:none;
     outline:none;
     background:transparent;
-    color:#08240b;
+    color:#04140a;
     font:inherit;
     font-size:14px;
     line-height:1.45;
@@ -235,13 +265,13 @@ const char* DASHBOARD_HTML = R"DASH(<!DOCTYPE html>
     min-height:24px;
     padding:8px 0;
   }
-  .composer textarea::placeholder{color:rgba(8,36,11,.6)}
+  .composer textarea::placeholder{color:rgba(4,20,10,.62)}
   .send{
     flex:0 0 auto;
     border:none;
     cursor:pointer;
-    background:#08240b;
-    color:var(--green-bright);
+    background:#04140a;
+    color:var(--blue-bright);
     font-weight:700;
     font-size:13px;
     letter-spacing:.04em;
@@ -257,12 +287,13 @@ const char* DASHBOARD_HTML = R"DASH(<!DOCTYPE html>
   .term{
     grid-area:term;
     min-height:0;
+    position:relative;
     display:flex;
     flex-direction:column;
-    background:linear-gradient(180deg,var(--green-panel),var(--green-panel-2));
-    border:1px solid rgba(103,185,106,.45);
+    background:linear-gradient(180deg,var(--panel-3),#080f0b);
+    border:1px solid rgba(34,197,94,.28);
     border-radius:var(--radius);
-    box-shadow:0 24px 60px rgba(0,0,0,.45), inset 0 0 0 1px rgba(255,255,255,.04);
+    box-shadow:0 24px 54px rgba(0,0,0,.45), inset 0 0 0 1px rgba(34,197,94,.05);
     overflow:hidden;
   }
   .term-head{
@@ -283,15 +314,15 @@ const char* DASHBOARD_HTML = R"DASH(<!DOCTYPE html>
   .term-xterm{
     flex:1 1 auto;
     min-height:0;
-    margin:12px;
-    padding:10px 12px;
+    margin:10px;
+    padding:8px 10px;
     background:#050805;
     border:1px solid rgba(103,185,106,.30);
     border-radius:var(--radius-sm);
     overflow:hidden;
   }
   .term-xterm .xterm{height:100%;padding:0}
-  .term-xterm .xterm-viewport{background-color:transparent !important}
+  .term-xterm .xterm-viewport{background-color:transparent !important;overflow-y:auto !important}
   .term-xterm .xterm-viewport::-webkit-scrollbar{width:10px}
   .term-xterm .xterm-viewport::-webkit-scrollbar-thumb{
     background:rgba(103,185,106,.25);border-radius:999px;border:3px solid transparent;background-clip:padding-box;
@@ -308,7 +339,7 @@ const char* DASHBOARD_HTML = R"DASH(<!DOCTYPE html>
   <div class="app">
 
     <header class="head">
-      <span class="pill"><span class="dot"></span>LOREA</span>
+      <span class="pill"><span class="dot"></span>OCLI</span>
       <span class="subtitle">AI agent &middot; LAN control dashboard</span>
       <div class="meta" id="meta">
         <span class="chip"><span class="k">model</span><b id="m-model">&hellip;</b></span>
@@ -329,7 +360,7 @@ const char* DASHBOARD_HTML = R"DASH(<!DOCTYPE html>
         <div class="empty" id="empty">No conversation yet. Send the first prompt below.</div>
         <div class="typing" id="typing">
           <span class="ds"><i></i><i></i><i></i></span>
-          <span>LOREA is working&hellip;</span>
+          <span>OCLI is working&hellip;</span>
         </div>
       </div>
       <form class="composer" id="composer" autocomplete="off">
@@ -419,7 +450,7 @@ const char* DASHBOARD_HTML = R"DASH(<!DOCTYPE html>
 
         var who = document.createElement("div");
         who.className = "who";
-        who.textContent = (role === "user") ? "You" : "LOREA";
+        who.textContent = (role === "user") ? "You" : "OCLI";
 
         var bub = document.createElement("div");
         bub.className = "bubble";
@@ -435,7 +466,6 @@ const char* DASHBOARD_HTML = R"DASH(<!DOCTYPE html>
 
   function loadHistory(){
     return fetch("/api/history").then(function(r){ return r.json(); }).then(function(d){
-      mainStat.textContent = "live";
       renderHistory((d && d.messages) ? d.messages : []);
     }).catch(function(){
       mainStat.textContent = "offline";
@@ -443,35 +473,62 @@ const char* DASHBOARD_HTML = R"DASH(<!DOCTYPE html>
   }
 
   function showTyping(on){
+    var stick = nearBottom(stream);
     typing.classList.toggle("show", on);
     if (on){
       stream.appendChild(typing);     // keep it last
-      if (nearBottom(stream)) stream.scrollTop = stream.scrollHeight;
     }
+    if (stick) stream.scrollTop = stream.scrollHeight;
+  }
+
+  function setBusy(on){
+    busy = !!on;
+    sendBtn.disabled = busy;
+    composer.classList.toggle("busy", busy);
+    showTyping(busy);
+  }
+
+  function loadStatus(){
+    return fetch("/api/status").then(function(r){ return r.json(); }).then(function(d){
+      var on = !!(d && d.busy);
+      setBusy(on);
+      return loadHistory().then(function(){
+        if (on) mainStat.textContent = "working";
+        else if (d && d.status === "error") mainStat.textContent = "error";
+        else mainStat.textContent = "live";
+      });
+    }).catch(function(){
+      mainStat.textContent = "offline";
+    });
   }
 
   function sendChat(){
     var text = prompt.value.trim();
     if (!text || busy) return;
-    busy = true;
-    sendBtn.disabled = true;
+    setBusy(true);
     prompt.value = "";
     autoGrow();
     lastHistory = "";          // force a re-render so the user msg shows now
-    showTyping(true);
-    mainStat.textContent = "working";
+    mainStat.textContent = "queued";
 
     fetch("/api/chat", {
       method:"POST",
       headers:{ "Content-Type":"application/json" },
       body: JSON.stringify({ message: text })
-    }).then(function(r){ return r.json(); })
-      .then(function(){ return loadHistory(); })
-      .catch(function(){ mainStat.textContent = "error"; })
+    }).then(function(r){
+        if (!r.ok){
+          return r.json().catch(function(){ return {}; }).then(function(d){
+            throw new Error((d && d.error) ? d.error : "request failed");
+          });
+        }
+        return r.json();
+      })
+      .then(function(){ return loadStatus(); })
+      .catch(function(err){
+        setBusy(false);
+        mainStat.textContent = err && err.message ? err.message : "error";
+      })
       .then(function(){
-        busy = false;
-        sendBtn.disabled = false;
-        showTyping(false);
         prompt.focus();
       });
   }
@@ -498,6 +555,63 @@ const char* DASHBOARD_HTML = R"DASH(<!DOCTYPE html>
     pushResize();
   }
 
+  function installWheelScrollGuard(){
+    if (!term) return;
+    var wheelTarget = termHost.querySelector(".xterm-viewport") || termHost;
+    var handler = function(e){
+      // xterm can translate wheel movement into mouse-report escape bytes when
+      // an app enables mouse tracking. The dashboard should scroll history.
+      var dy = e.deltaY || 0;
+      var px = (e.deltaMode === 1) ? 1 : (e.deltaMode === 2 ? term.rows : 32);
+      var lines = Math.max(1, Math.min(20, Math.ceil(Math.abs(dy) / px)));
+      try { term.scrollLines((dy > 0 ? 1 : -1) * lines); } catch(err){}
+      e.preventDefault();
+      e.stopPropagation();
+      if (e.stopImmediatePropagation) e.stopImmediatePropagation();
+      return false;
+    };
+    termHost.addEventListener("wheel", handler, { passive:false, capture:true });
+    if (wheelTarget !== termHost){
+      wheelTarget.addEventListener("wheel", handler, { passive:false, capture:true });
+    }
+  }
+
+  function stripWheelMouseReports(data){
+    if (!data) return data;
+    var out = "";
+    for (var i = 0; i < data.length; ){
+      if (data.charCodeAt(i) === 27 && data[i + 1] === "["){
+        // SGR mouse mode: ESC [ < button ; x ; y M/m. Wheel uses button bit 64.
+        if (data[i + 2] === "<"){
+          var j = i + 3;
+          var button = "";
+          while (j < data.length && data[j] >= "0" && data[j] <= "9") button += data[j++];
+          if (data[j] === ";"){
+            var k = j + 1;
+            while (k < data.length && data[k] !== "M" && data[k] !== "m") k++;
+            if (k < data.length){
+              var b = parseInt(button, 10);
+              if (!isNaN(b) && (b & 64)){
+                i = k + 1;
+                continue;
+              }
+            }
+          }
+        }
+        // Legacy X10 mouse mode: ESC [ M cb cx cy.
+        if (data[i + 2] === "M" && i + 5 < data.length){
+          var legacyButton = data.charCodeAt(i + 3) - 32;
+          if (legacyButton & 64){
+            i += 6;
+            continue;
+          }
+        }
+      }
+      out += data[i++];
+    }
+    return out;
+  }
+
   function setupTerminal(){
     if (typeof Terminal === "undefined"){
       // xterm CDN not loaded yet (slow link); retry without blocking the page.
@@ -507,19 +621,23 @@ const char* DASHBOARD_HTML = R"DASH(<!DOCTYPE html>
     term = new Terminal({
       cursorBlink:true,
       convertEol:false,
-      scrollback:5000,
+      scrollback:20000,
+      scrollSensitivity:3,
+      fastScrollModifier:"alt",
+      fastScrollSensitivity:8,
+      smoothScrollDuration:80,
       fontFamily:'"SF Mono",ui-monospace,Menlo,Consolas,"Roboto Mono",monospace',
       fontSize:12.5,
       lineHeight:1.2,
       theme:{
-        background:"#050805",
-        foreground:"#7fd083",
-        cursor:"#7fd083",
-        cursorAccent:"#050805",
-        selectionBackground:"rgba(103,185,106,.35)",
+        background:"#060a08",
+        foreground:"#8affb0",
+        cursor:"#4ade80",
+        cursorAccent:"#060a08",
+        selectionBackground:"rgba(34,197,94,.35)",
         black:"#0b120c",
-        green:"#67b96a",
-        brightGreen:"#7fd083"
+        green:"#22c55e",
+        brightGreen:"#4ade80"
       }
     });
     if (typeof FitAddon !== "undefined" && FitAddon.FitAddon){
@@ -529,9 +647,13 @@ const char* DASHBOARD_HTML = R"DASH(<!DOCTYPE html>
     term.open(termHost);
     fitTerm();
     setTimeout(fitTerm, 60);
+    installWheelScrollGuard();
+    termHost.addEventListener("click", function(){ try { term.focus(); } catch(e){} });
 
     // local keystrokes -> shared PTY master (raw bytes).
     term.onData(function(d){
+      d = stripWheelMouseReports(d);
+      if (!d) return;
       fetch("/api/term/input", {
         method:"POST",
         headers:{ "Content-Type":"application/json" },
@@ -571,9 +693,9 @@ const char* DASHBOARD_HTML = R"DASH(<!DOCTYPE html>
 
   /* ---------- boot ---------- */
   loadInfo();
-  loadHistory();
+  loadStatus();
   setupTerminal();
-  setInterval(function(){ if (!busy) loadHistory(); }, 2000);
+  setInterval(loadStatus, 1500);
   setInterval(loadInfo, 15000);
   prompt.focus();
 })();

@@ -172,11 +172,14 @@ int run_spawn_agent_worker() {
                 sys0 = agent->messages[0]["content"].get<std::string>();
             }
             sys0 += std::string(
-                " You are spawned worker agent `") + name + "`. You have your own tool loop and memory. "
-                "You are not alone in the workspace; avoid broad edits and do not overwrite unrelated changes. "
-                "If tool_access is read_only, inspect and report only. If tool_access is full, edit or run commands only when the task clearly requires it. "
+                "\n\n<spawned_worker_context>You are OCLI worker agent `") + name + "`. "
+                "Complete the assigned task as a single autonomous local-agent turn. "
+                "You are not alone in the workspace; avoid broad edits and never overwrite unrelated user changes. "
+                "If tool_access is read_only, inspect and report only. If tool_access is full, inspect relevant files, "
+                "use write_file for required edits, run focused verification when feasible, and then finish. "
                 "Before making claims about the current workspace, inspect it with an available tool. "
-                "Do not spawn more agents. Finish with concise findings, exact files touched if any, and remaining risks.";
+                "Do not spawn more agents. Never output <voice_note> blocks. "
+                "Finish with concise findings, exact files touched if any, verification run, and remaining risks.</spawned_worker_context>";
             if (!agent->messages.empty()) agent->messages[0]["content"] = sys0;
 
             std::vector<std::string> user_parts;

@@ -16,7 +16,7 @@ namespace ocli {
 const char* ACCENT = Colors::TEAL;
 const char* MUTED  = Colors::SLATE;
 
-const std::vector<int> FLAIR_RAMP = {51, 50, 44, 45, 39, 38, 75, 69, 105, 141};
+const std::vector<int> FLAIR_RAMP = {51, 87, 159, 45, 118, 154, 226, 220, 208, 213, 201, 141, 99};
 
 const std::vector<std::string> CELEBRATION_ICONS = {
     "✦", "✧", "⋆", "✶", "✷", "✸", "❉", "✺"};

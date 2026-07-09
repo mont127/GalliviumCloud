@@ -1,0 +1,52 @@
+# Self-contained, portable OCLI MPC deployment.
+#
+#   cd mcp-docker && docker compose up --build
+#
+# On first start the `llama` service downloads the Qwythos GGUF from Hugging Face
+# and serves it (OpenAI-compatible). The `mcp` service wraps it in the MPC
+# protocol and opens a Cloudflare quick tunnel, printing a public https URL like:
+#
+#   OCLI MPC is LIVE at:  https://<name>.trycloudflare.com
+#   /connect https://<name>.trycloudflare.com --token <token>
+#
+# Faster on your own machine? Skip the llama service and point at a model you
+# already run natively (uses your GPU):
+#   MPC_UPSTREAM_URL=http://host.docker.internal:11434/v1 docker compose up --build mcp
+# (ollama on :11434, or a llama-server on :8080/v1)
+
+services:
+  llama:
+    image: ghcr.io/ggml-org/llama.cpp:server
+    command: >
+      --hf-repo empero-ai/Qwythos-9B-Claude-Mythos-5-1M-GGUF
+      --hf-file Qwythos-9B-Claude-Mythos-5-1M-Q4_K_M.gguf
+      -c 8192 --host 0.0.0.0 --port 8080
+    volumes:
+      - qwythos-cache:/root/.cache/llama.cpp
+    restart: unless-stopped
+    # For an NVIDIA host, switch the image to ghcr.io/ggml-org/llama.cpp:server-cuda
+    # and uncomment for GPU:
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices: [{ driver: nvidia, count: all, capabilities: [gpu] }]
+
+  mcp:
+    build:
+      context: ..
+      dockerfile: mcp-docker/Dockerfile
+    depends_on:
+      - llama
+    environment:
+      MPC_UPSTREAM_URL: ${MPC_UPSTREAM_URL:-http://llama:8080/v1}
+      MPC_MODEL: ${MPC_MODEL:-qwythos}
+      # Pin a stable token instead of the auto-generated one:
+      # MPC_TOKEN: change-me
+    extra_hosts:
+      - "host.docker.internal:host-gateway"   # lets MPC_UPSTREAM_URL reach a host model on Linux
+    ports:
+      - "8799:8799"                            # optional: also reachable on the LAN
+    restart: unless-stopped
+
+volumes:
+  qwythos-cache:

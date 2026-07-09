@@ -438,6 +438,20 @@ void LOREA::print_usage() {
     int elapsed = std::max(0, static_cast<int>(now_seconds() - session_started_at));
     std::string dur = fmt_duration(elapsed);
     int approx_tokens = estimate_context_tokens();
+    int ctx_budget = std::max(1, context_budget);
+    int ctx_pct = std::min(100, approx_tokens * 100 / ctx_budget);
+    int ctx_w = 22;
+    int ctx_fill = std::min(ctx_w, (approx_tokens * ctx_w + ctx_budget - 1) / ctx_budget);
+    const char* ctx_col = ctx_pct >= 90 ? Colors::RED : (ctx_pct >= 70 ? Colors::ORANGE : Colors::GREEN);
+    std::string ctx_bar;
+    for (int i = 0; i < ctx_w; ++i)
+        ctx_bar += (i < ctx_fill) ? (std::string(ctx_col) + "\xE2\x96\xB0")
+                                  : (std::string(Colors::DIM) + Colors::GRAY + "\xE2\x96\xB1");
+    ctx_bar += Colors::RESET;
+    std::string ctx_window = ctx_bar + "  " + Colors::WHITE + std::to_string(ctx_pct) + "%" +
+                             Colors::RESET + " " + Colors::DIM + Colors::GRAY + "· " +
+                             std::to_string(approx_tokens) + "/" + std::to_string(ctx_budget) +
+                             " before auto-compact" + Colors::RESET;
     print_panel("usage", {
         kv_row("session",   std::string(Colors::WHITE) + dur + Colors::RESET),
         kv_row("turns",     std::string(Colors::WHITE) + std::to_string(session_turns) + Colors::RESET),
@@ -448,6 +462,7 @@ void LOREA::print_usage() {
         kv_row("context",   std::string(Colors::WHITE) + "~" + std::to_string(approx_tokens) + Colors::RESET +
                             " " + Colors::DIM + Colors::GRAY + "tokens · " +
                             std::to_string(messages.size()) + " messages" + Colors::RESET),
+        kv_row("window",    ctx_window),
         kv_row("compacted", std::string(Colors::WHITE) + std::to_string(compaction_count) + Colors::RESET +
                             " " + Colors::DIM + Colors::GRAY + "times" + Colors::RESET),
     }, MUTED);
@@ -511,7 +526,14 @@ void LOREA::run() {
         std::size_t slash = m.find_last_of('/');
         if (slash != std::string::npos) m = m.substr(slash + 1);
         if (m.size() > 32) m = m.substr(0, 31) + "\xE2\x80\xA6";
-        std::string s = backend + " · " + m;
+        int used = estimate_context_tokens();
+        int budget = std::max(1, context_budget);
+        int pct = std::min(100, used * 100 / budget);
+        const int W = 10;
+        int fill = std::min(W, (used * W + budget - 1) / budget);
+        std::string bar;
+        for (int i = 0; i < W; ++i) bar += (i < fill) ? "\xE2\x96\xB0" : "\xE2\x96\xB1";
+        std::string s = "ctx " + bar + " " + std::to_string(pct) + "%   " + backend + " · " + m;
         s += std::string("   auto ") + (auto_mode ? "on" : "off");
         s += std::string("   plan ") + (planning_enabled ? "on" : "off");
         return s;
@@ -521,7 +543,7 @@ void LOREA::run() {
     if (want_live) {
         live_begin(live_status);
         if (live_active()) {
-            std::cout << ACCENT << Colors::BOLD << "LOREA" << Colors::RESET
+            std::cout << ACCENT << Colors::BOLD << "OCLI" << Colors::RESET
                       << Colors::DIM << Colors::GRAY
                       << "  ready. Type a prompt below. The panel on the right is the live "
                          "terminal the AI works in."
@@ -536,25 +558,34 @@ void LOREA::run() {
     while (true) {
         try {
             auto render_bar = [this]() -> std::string {
+                using C = Colors;
                 int width = term_width();
                 std::string indent = left_indent();
-                std::string meta_left = " LOREA ";
-                std::string mpc_flag = (mpc_url && !mpc_url->empty()) ? " · mpc" : "";
-                std::string meta_right = std::string(" ") + backend + ":" + model_name + mpc_flag +
-                    " · auto " + (auto_mode ? "on" : "off") +
-                    " · plan " + (planning_enabled ? "on" : "off") + " ";
-                int fill = width - 4 - static_cast<int>(utf8_len(meta_left)) - static_cast<int>(utf8_len(meta_right));
+                std::string model = model_name;
+                std::size_t slash = model.find_last_of('/');
+                if (slash != std::string::npos) model = model.substr(slash + 1);
+                if (static_cast<int>(utf8_len(model)) > 26) model = utf8_substr(model, 0, 25) + "…";
+                auto chip = [](const std::string& key, const std::string& value, const char* fg) {
+                    return std::string(Colors::BG_DARK) + Colors::DIM + Colors::GRAY + " " + key + " " +
+                           Colors::RESET + fg + Colors::BOLD + value + Colors::RESET;
+                };
+                std::string meta_left = gradient_text(" ◆ OCLI ", &FLAIR_RAMP);
+                std::string meta_right =
+                    chip(backend, model, C::SKY) + " " +
+                    chip("auto", auto_mode ? "on" : "off", auto_mode ? C::MINT : C::SLATE) + " " +
+                    chip("plan", planning_enabled ? "on" : "off", planning_enabled ? C::AMBER : C::SLATE);
+                if (mpc_url && !mpc_url->empty()) meta_right += " " + chip("mpc", "on", C::PINK);
+                meta_right = " " + meta_right + " ";
+                int fill = width - 4 - static_cast<int>(clean_len(meta_left)) - static_cast<int>(clean_len(meta_right));
                 if (fill < 2) {
-                    int budget = std::max(0, width - 4 - static_cast<int>(utf8_len(meta_left)) - 2);
-                    meta_right = utf8_substr(meta_right, 0, static_cast<std::size_t>(budget));
-                    fill = std::max(2, width - 4 - static_cast<int>(utf8_len(meta_left)) -
-                                       static_cast<int>(utf8_len(meta_right)));
+                    int budget = std::max(0, width - 6 - static_cast<int>(clean_len(meta_left)));
+                    meta_right = truncate_visible(meta_right, budget);
+                    fill = std::max(2, width - 4 - static_cast<int>(clean_len(meta_left)) -
+                                       static_cast<int>(clean_len(meta_right)));
                 }
-                return std::string(indent) + MUTED + "╭─" + Colors::RESET +
-                       ACCENT + Colors::BOLD + meta_left + Colors::RESET +
-                       MUTED + repeat_str("─", fill) + Colors::RESET +
-                       Colors::DIM + Colors::GRAY + meta_right + Colors::RESET +
-                       MUTED + "─╮" + Colors::RESET;
+                return std::string(indent) + C::DIM + C::CYAN + "╭" + C::RESET +
+                       meta_left + "\033[38;5;51m" + repeat_str("━", fill) + C::RESET +
+                       meta_right + C::DIM + C::VIOLET + "╮" + C::RESET;
             };
             auto render_top = [&]() -> std::string {
 
@@ -567,8 +598,8 @@ void LOREA::run() {
                 return render_bar();
             };
             auto render_prompt = []() -> std::string {
-                return left_indent() + MUTED + "│" + Colors::RESET + " " +
-                       ACCENT + Colors::BOLD + "❯" + Colors::RESET + " ";
+                return left_indent() + Colors::DIM + Colors::CYAN + "│" + Colors::RESET + " " +
+                       gradient_text("❯", &FLAIR_RAMP) + " ";
             };
 
             std::string user_input;
@@ -668,10 +699,14 @@ void LOREA::run() {
                         } catch (...) {
                         }
                     }
-                    start_dashboard(*this, port);
-                    std::string url = std::string("http://") + dashboard_lan_ipv4() + ":" + std::to_string(port);
-                    log_ok("Dashboard live at " + std::string(Colors::TEAL) + url + Colors::RESET);
-                    log_info("Reachable on your LAN — open it from any device on this network.");
+                    if (start_dashboard(*this, port)) {
+                        std::string url = std::string("http://") + dashboard_lan_ipv4() + ":" +
+                                          std::to_string(port);
+                        log_ok("Dashboard live at " + std::string(Colors::TEAL) + url + Colors::RESET);
+                        log_info("Reachable on your LAN — open it from any device on this network.");
+                    } else {
+                        log_warn("Dashboard did not start. Pick another port, for example /dashboard 8740.");
+                    }
                     continue;
                 } else if (cmd == "/terminal") {
                     if (live_active()) {
@@ -716,6 +751,7 @@ void LOREA::run() {
                 } else if (cmd == "/model") {
                     if (cmd_parts.size() > 1) {
                         model_name = join_str(tail_from(cmd_parts, 1), " ");
+                        sync_context_budget();
                         if (backend == "mlx") {
                             if (server_process && server_model != model_name) {
                                 cleanup();
@@ -816,7 +852,7 @@ void LOREA::run() {
                         help_row("/load [name]",                     "load a session (menu if omitted)"),
                         help_row("/sessions",                        "list saved sessions"),
                         help_row("/usage",                           "show token, timing, and activity stats"),
-                        help_row("/exit",                            "quit LOREA"),
+                        help_row("/exit",                            "quit OCLI"),
                         std::string(""),
                         help_header("workspace"),
                         help_row("/cmd <shell>",                     "run a shell command without using a turn"),
@@ -865,7 +901,7 @@ void LOREA::run() {
                     if (!repo_id || repo_id->empty()) {
 
                         repo_id = LOREA_CYBER_HF_REPO;
-                        log_info("No repo given — downloading the LOREA-cyber model: " + *repo_id);
+                        log_info("No repo given — downloading the default cyber model: " + *repo_id);
                         log_info("~16 GB MLX 4-bit model (Apple Silicon). It will be set as your model when done.");
                     }
                     if (!download_dir.has_value()) {
@@ -989,6 +1025,7 @@ void LOREA::run() {
             int auto_count = 0;
             while (auto_count < 10) {
                 compact_history();
+                LiveGeneratingGuard generating;
                 bool had_tools = process_chat();
                 std::string last_msg = messages.empty() ? std::string("") : msg_content(messages.back());
                 bool should_continue =

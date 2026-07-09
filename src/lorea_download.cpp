@@ -310,12 +310,8 @@ std::string LOREA::model_download_default_dir(const std::string& model_name,
         return path_join("models", "airllm", name);
     }
     if (backend == "llama-cpp") {
-        if (!model_name.empty() && model_name.find('/') != std::string::npos && url.empty()) {
-            std::string name = last_path_segment(rstrip_slash(model_name));
-            if (name.empty()) name = "model";
-            return path_join("llama.cpp", "models", name);
-        }
-        return path_join("llama.cpp", "models");
+        // Always download GGUFs flat into ~/llama.cpp/models/
+        return expanduser("~/llama.cpp/models");
     }
     return "";
 }
@@ -374,17 +370,22 @@ std::optional<std::string> LOREA::run_model_download(const std::string& model_na
         }
         return run_cmd("hf download " + shlex_quote(model_name));
     } else if (backend == "llama-cpp") {
+        std::string repo_or_name = find_hf_repo_for_model(model_name);
         if (ask_for_path && !truthy(download_dir))
-            download_dir = prompt_download_dir(model_name, url.value_or(""));
+            download_dir = prompt_download_dir(repo_or_name, url.value_or(""));
+        // Default destination: ~/llama.cpp/models (flat, not nested)
         std::string chosen = truthy(download_dir)
                                  ? *download_dir
-                                 : model_download_default_dir(model_name, url.value_or(""));
-        std::string dir = normalize_download_dir(chosen).value_or("");
-        if (!truthy(url) && model_name.find('/') != std::string::npos) {
+                                 : expanduser("~/llama.cpp/models");
+        std::string dir = normalize_download_dir(chosen).value_or(expanduser("~/llama.cpp/models"));
+        if (!truthy(url) && repo_or_name.find('/') != std::string::npos) {
             std::error_code ec;
             fs::create_directories(dir, ec);
-            run_cmd("hf download " + shlex_quote(model_name) +
+            log_info("Downloading " + repo_or_name + " GGUFs to " + dir + " ...");
+            run_cmd("hf download " + shlex_quote(repo_or_name) +
                     " --include '*.gguf' --local-dir " + shlex_quote(dir));
+            log_info(std::string("Done. Models saved to ") + Colors::TEAL + dir + Colors::RESET);
+            log_info(std::string("To use: ") + Colors::TEAL + "/model " + dir + Colors::RESET);
             return std::nullopt;
         }
         if (!truthy(url))
