@@ -36,13 +36,32 @@ for _ in $(seq 1 40); do
   sleep 1
 done
 
+# cloudflared quick-tunnel DNS can take 10-40s to propagate. Don't announce the URL
+# as connectable until it actually resolves AND the MPC server answers through it —
+# otherwise /connect fails with "Couldn't resolve host name".
+READY=""
+if [ -n "$URL" ]; then
+  echo "[mcp] tunnel URL: $URL"
+  echo "[mcp] waiting for the tunnel to become reachable (DNS can take a bit)..."
+  for _ in $(seq 1 45); do
+    if curl -sf -m 5 -H "Authorization: Bearer ${MPC_TOKEN}" "${URL}/status" >/dev/null 2>&1; then
+      READY=1; break
+    fi
+    sleep 2
+  done
+fi
+
 echo ""
 echo "=================================================================="
-if [ -n "$URL" ]; then
+if [ -n "$URL" ] && [ -n "$READY" ]; then
   echo "  OCLI MPC is LIVE at:  $URL"
   echo ""
   echo "  Connect from any OCLI:"
   echo "      /connect $URL --token $MPC_TOKEN"
+elif [ -n "$URL" ]; then
+  echo "  Tunnel is up but not resolvable yet: $URL"
+  echo "  Give it ~30s, then in OCLI:  /connect $URL --token $MPC_TOKEN"
+  echo "  (if /connect says 'Couldn't resolve host name', just wait and retry)"
 else
   echo "  Tunnel URL not detected yet. Last cloudflared output:"
   tail -n 15 /tmp/cf.log
