@@ -1,6 +1,6 @@
 # Self-contained, portable OCLI MPC deployment.
 #
-#   cd mcp-docker && docker compose up --build
+#   docker compose up --build
 #
 # On first start the `llama` service downloads the Qwythos GGUF from Hugging Face
 # and serves it (OpenAI-compatible). The `mcp` service wraps it in the MPC
@@ -9,8 +9,8 @@
 #   OCLI MPC is LIVE at:  https://<name>.trycloudflare.com
 #   /connect https://<name>.trycloudflare.com --token <token>
 #
-# Faster on your own machine? Skip the llama service and point at a model you
-# already run natively (uses your GPU):
+# Faster on your own machine? Skip the bundled model and point at one you already
+# run natively (uses your GPU):
 #   MPC_UPSTREAM_URL=http://host.docker.internal:11434/v1 docker compose up --build mcp
 # (ollama on :11434, or a llama-server on :8080/v1)
 
@@ -33,8 +33,8 @@ services:
 
   mcp:
     build:
-      context: ..
-      dockerfile: mcp-docker/Dockerfile
+      context: .
+      dockerfile: Dockerfile
     depends_on:
       - llama
     environment:

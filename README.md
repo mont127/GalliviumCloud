@@ -1,201 +1,103 @@
-# OCLI
+# GalliviumCloud
 
-An autonomous, **local-first AI coding, research, and security agent** for your terminal.
+Run an **[OCLI](https://github.com/mont127/LOREA)-compatible model server anywhere Docker runs**,
+and get a **public URL** any OCLI client can `/connect` to — no port forwarding, no
+account needed for the tunnel.
 
-OCLI runs a model of your choice — a local GGUF/MLX model or a cloud API — inside a
-real agent loop with real tools: shell, files, git, web search, and a shared
-terminal that both you and the AI type into. It ships as a single C++20 binary and
-presents a live split-pane TUI plus an optional LAN web dashboard.
+It's two small pieces:
 
-It is tuned as an **ethical red-team / security assistant** as well as a general
-coding agent.
-
----
-
-## Highlights
-
-- **Split-pane live view** — conversation on the left, a shared PTY terminal on the right that both you and the AI drive.
-- **Many backends** — local (`llama.cpp`, `MLX`, `Ollama`), cloud (`OpenAI`, `Anthropic`, `NVIDIA NIM`), or a remote **MPC** server you connect to.
-- **Qwythos-9B (1M context)** as the default local model, with a one-command installer.
-- **Context-window progress bar** and **effort levels** that scale how long the model thinks before it acts; automatic history compaction.
-- **LAN web dashboard**, parallel **worker sub-agents**, and an autonomous **`/loop`** mode.
-- **Portable sharing** — run the model server in Docker and get a public Cloudflare-tunnel URL any OCLI can connect to.
+- **`mcpserver.py`** — a dependency-light server that speaks OCLI's **MPC protocol**
+  (what `/connect` talks to) and proxies chat to any **OpenAI-compatible upstream**
+  (ollama, a llama.cpp `llama-server`, or a cloud provider), streaming results back as
+  NDJSON.
+- **A Docker + Compose stack** that serves the default model (**Qwythos-9B, 1M context**)
+  and opens a **Cloudflare quick tunnel**, printing the public URL on start.
 
 ---
 
-## Requirements
-
-- macOS or Linux
-- A **C++20** compiler, **CMake**, and **libcurl** (+ pthreads)
-  - macOS: `xcode-select --install` then `brew install cmake curl`
-  - Debian/Ubuntu: `sudo apt install build-essential cmake libcurl4-openssl-dev`
-- **Python 3** for the helper bridges (search / NVIDIA / MPC)
-- At least one model backend (see [Backends](#backends--models))
-
-## Build & install
+## Quick start (self-contained)
 
 ```bash
-git clone https://github.com/mont127/GalliviumCloud.git
-cd GalliviumCloud
-make            # builds ./build/ocli
-make install    # installs to ~/bin/ocli  (+ helper scripts alongside it)
-```
-
-Make sure `~/bin` is on your `PATH`, then run `ocli`.
-
----
-
-## Quick start (tutorial)
-
-**1. Get a model.** The fastest path is the bundled default, Qwythos:
-
-```bash
-install_qwythos.sh        # downloads the GGUF to ~/models and registers it with ollama
-```
-
-(or point OCLI at any [backend](#backends--models) below).
-
-**2. Run it.**
-
-```bash
-ocli
-```
-
-You land in the **split-pane live view**: type a prompt in the bar at the bottom,
-watch the AI answer on the left and work in the terminal on the right.
-
-**3. Pick a backend/model** if needed:
-
-```
-/backend llama-cpp        # or: ollama, openai, anthropic, nvidia, mlx
-/model                    # arrow-select a model
-```
-
-**4. Give it real work** — it uses tools and carries the task through to a result:
-
-```
-scan this repo for a path-traversal bug and write a failing test that proves it
-```
-
-### Using the live view
-
-- Type in the bottom bar to chat; **Enter** sends.
-- **Ctrl-T** toggles focus into the right-hand shared terminal so you can run commands yourself — the AI sees what you run, and its output can be sent along with your next message.
-- **Mouse wheel** or **PgUp/PgDn** scrolls the conversation (and the terminal pane).
-- The pill shows a live **context-window bar** (`ctx ▰▰▱▱ NN%`).
-- **Double-Ctrl-C** quits. `/classic` switches to a plain scrolling view (or start with `LOREA_CLASSIC=1 ocli`).
-- `/terminal` attaches full-screen to the shared shell (Ctrl-] to detach).
-
-### The web dashboard
-
-```
-/dashboard
-```
-
-Opens a dark, LAN-reachable web UI (JetBrains Mono) with the same conversation plus a
-live `xterm.js` terminal. Open the printed URL from any device on your network.
-
-> The dashboard runs arbitrary shell commands. Only use it on a trusted network.
-
----
-
-## Backends & models
-
-| Backend | What it is | Setup |
-|---|---|---|
-| `llama-cpp` | Local GGUF via a `llama-server` | `/setup` installs llama.cpp; default model = Qwythos (`install_qwythos.sh`) |
-| `ollama` | Local Ollama | run ollama; `install_qwythos.sh` registers `qwythos` |
-| `mlx` | Apple-Silicon MLX server | `/setup_mlx` |
-| `openai` | OpenAI API | `export OPENAI_API_KEY=...` |
-| `anthropic` | Claude API | `export ANTHROPIC_API_KEY=...` |
-| `nvidia` | NVIDIA NIM (OpenAI-compatible) via a Python bridge | key in `~/.config/lorea/nvidia_api_key` or `NVIDIA_API_KEY` |
-| MPC | A remote OCLI model server you connect to | `/connect <url> [--token t]` |
-
-Switch with `/backend <name>` and pick a model with `/model`. `llama-cpp` and `ollama`
-default to **Qwythos** once the GGUF is installed.
-
-### Context window
-
-The working context is model-aware; Qwythos gets a large window. Override it (bounded by your RAM):
-
-```bash
-LOREA_CONTEXT=128k ocli     # also 256k, 1M, ...
-```
-
-### Effort / thinking
-
-`/effort` sets how hard the model works — and, crucially, **how much it thinks before it
-acts**. It ranges from `basic` (answer directly) through `elite` and `mythic` to
-`beyond` (deliberate to the maximum inside its reasoning before committing).
-
----
-
-## Share a model over the internet (MPC + Docker + Cloudflare)
-
-Serve any model over OCLI's MPC protocol and get a public URL, from any machine with Docker:
-
-```bash
-cd mcp-docker
 docker compose up --build
 ```
 
-On first start it downloads/serves Qwythos and prints:
+First boot downloads the Qwythos GGUF (~5.5 GB, cached in a volume) and serves it, then
+prints:
 
 ```
 ==================================================================
   OCLI MPC is LIVE at:  https://<name>.trycloudflare.com
+
   Connect from any OCLI:
       /connect https://<name>.trycloudflare.com --token <token>
 ==================================================================
 ```
 
-Paste that `/connect …` line into any OCLI. To use a faster **native** model (your GPU)
-instead of the CPU container, point the proxy at it:
+Paste that `/connect …` line into OCLI and you're running on Qwythos from anywhere.
+
+> The bundled `llama` service runs on **CPU** inside Docker — portable, but not fast for
+> a 9B. See below for GPU / native options.
+
+## Use a model you already run (faster)
+
+Skip the bundled model and tunnel to a native one (uses your GPU):
 
 ```bash
+# host ollama (has `qwythos` after OCLI's install_qwythos.sh):
 MPC_UPSTREAM_URL=http://host.docker.internal:11434/v1 docker compose up --build mcp
+
+# or a host llama-server on :8080:
+MPC_UPSTREAM_URL=http://host.docker.internal:8080/v1  docker compose up --build mcp
 ```
 
-You can also run the MPC server without Docker: `mcpserver.py` (needs the `openai`
-package and an OpenAI-compatible upstream). See `mcp-docker/README.md` for details.
+## NVIDIA GPU host
+
+In `docker-compose.yml`, set the `llama` image to `ghcr.io/ggml-org/llama.cpp:server-cuda`
+and uncomment the `deploy:` GPU block, then `docker compose up --build`.
+
+## Run without Docker
+
+```bash
+pip install openai
+python3 mcpserver.py            # 0.0.0.0:8799, upstream = ollama, model = qwythos
+```
+
+Then, separately, expose it however you like (`cloudflared tunnel --url http://localhost:8799`,
+an SSH tunnel, a reverse proxy, …) and `/connect` to the resulting URL.
 
 ---
 
-## Command reference
+## Configuration (env)
 
-**Session:** `/status` · `/usage` (token + context + activity stats) · `/tasks` · `/save [name]` · `/load [name]` · `/sessions` · `/exit`
+| var | default | meaning |
+|-----|---------|---------|
+| `MPC_UPSTREAM_URL` | `http://llama:8080/v1` | OpenAI-compatible upstream to proxy chat to |
+| `MPC_UPSTREAM_KEY` | `none` | upstream API key (llama-server ignores it) |
+| `MPC_MODEL` | `qwythos` | model name sent upstream / reported to OCLI |
+| `MPC_TOKEN` | auto-generated | bearer token clients must send (`--token`) |
+| `MPC_PORT` | `8799` | port the MPC server listens on |
+| `MPC_MAX_TOKENS` | `4096` | per-reply cap |
 
-**Workspace:** `/cmd <shell>` (run without using a turn) · `/diff [path]` · `/copy` · `/retry` · `/undo` · `/clear`
-
-**View & terminal:** `/live` · `/classic` · `/terminal` · `/dashboard`
-
-**Agents:** `/agent [n] [goal]` · `/agent --full [n] [goal]` (agents may run commands / edit files)
-
-**Models & backends:** `/backend` · `/model` · `/connect [url] [--token t]` · `/setup` (llama.cpp) · `/setup_mlx` · `/download <repo>` · `/download_model [m]`
-
-**Behavior:** `/auto` (auto-execute) · `/effort` · `/loop <goal>` (autonomous; Esc stops) · `/plan` · `/vram [--auto]` · `/theme [name]` · `/help`
+The tunnel is public, so a token is always set (generated if you don't pin one) — keep it secret.
 
 ---
 
-## Config (environment)
+## MPC protocol (what `mcpserver.py` implements)
 
-| Variable | Effect |
+OCLI's `/connect` client speaks this; the server answers:
+
+| Method + path | Purpose |
 |---|---|
-| `LOREA_CLASSIC=1` | start in the plain scrolling view (no split-pane) |
-| `LOREA_CONTEXT=128k` | set the working context window (`128k`, `256k`, `1M`, …) |
-| `NVIDIA_API_KEY` | key for the `nvidia` backend (or use `~/.config/lorea/nvidia_api_key`) |
-| `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` | cloud backend keys |
-| `PYTHON` | python interpreter for the helper bridges |
-| `BINDIR` (make) | install directory (default `~/bin`) |
+| `GET /status` | `{ok, version, selected_backend, selected_model}` |
+| `GET /models` | `{backend, models[], installed[]}` |
+| `POST /select` | `{backend, model}` → `{selected_backend, selected_model}` |
+| `POST /chat` | chat completion; `{"stream": true}` streams **NDJSON** events (`{"type":"content"}` … `{"type":"metadata"}` … `{"type":"done"}`, or `{"type":"error","retryable":…}`) |
+| `GET /downloads`, `POST /download` / `/cancel` / `/delete` | model-management stubs (manage models out-of-band) |
 
----
+Auth: optional `Authorization: Bearer <MPC_TOKEN>` on every request.
 
-## Ethical use
-
-OCLI is a security assistant built for **authorized, lawful work** — your own systems,
-engagements you are hired for, CTFs, labs, security research, and education. Use it only
-where you have permission. It refuses and redirects clearly unauthorized or mass-harm
-requests.
+GLM/Qwen-style reasoning (`reasoning_content`) is wrapped in `<thought>…</thought>` so OCLI
+renders it as "thinking".
 
 ## License
 

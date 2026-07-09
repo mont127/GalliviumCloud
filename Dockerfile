@@ -2,7 +2,7 @@
 # Wraps mcpserver.py (the MPC protocol OCLI's /connect expects) and prints a
 # public https URL on start. Proxies chat to an OpenAI-compatible upstream
 # (the bundled llama.cpp service by default; override MPC_UPSTREAM_URL to use
-# your own ollama / llama-server).
+# your own ollama / llama-server / cloud provider).
 FROM python:3.12-slim
 
 ARG TARGETARCH
@@ -18,9 +18,8 @@ RUN arch="$( [ "$TARGETARCH" = "arm64" ] && echo arm64 || echo amd64 )" \
     && chmod +x /usr/local/bin/cloudflared
 
 WORKDIR /app
-# build context is the repo root (see docker-compose.yml: context: ..)
 COPY mcpserver.py /app/mcpserver.py
-COPY mcp-docker/entrypoint.sh /app/entrypoint.sh
+COPY entrypoint.sh /app/entrypoint.sh
 RUN chmod +x /app/entrypoint.sh
 
 ENV MPC_HOST=0.0.0.0 \
