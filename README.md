@@ -77,6 +77,7 @@ an SSH tunnel, a reverse proxy, …) and `/connect` to the resulting URL.
 | `MPC_TOKEN` | auto-generated | bearer token clients must send (`--token`) |
 | `MPC_PORT` | `8799` | port the MPC server listens on |
 | `MPC_MAX_TOKENS` | `4096` | per-reply cap |
+| `LLAMA_CTX` | `32768` | bundled `llama` service context size — must exceed OCLI's ~10k-token system prompt; raise for longer chats (needs more RAM) |
 
 The tunnel is public, so a token is always set (generated if you don't pin one) — keep it secret.
 

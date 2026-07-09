@@ -17,10 +17,13 @@
 services:
   llama:
     image: ghcr.io/ggml-org/llama.cpp:server
+    # OCLI's system prompt makes each request ~10k tokens, so the context must be
+    # well above that. --parallel 1 gives the single OCLI client the whole window.
+    # Raise LLAMA_CTX for longer chats (more RAM); lower it on a small box.
     command: >
       --hf-repo empero-ai/Qwythos-9B-Claude-Mythos-5-1M-GGUF
       --hf-file Qwythos-9B-Claude-Mythos-5-1M-Q4_K_M.gguf
-      -c 8192 --host 0.0.0.0 --port 8080
+      -c ${LLAMA_CTX:-32768} --parallel 1 --host 0.0.0.0 --port 8080
     volumes:
       - qwythos-cache:/root/.cache/llama.cpp
     restart: unless-stopped

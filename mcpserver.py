@@ -29,6 +29,14 @@ import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 VERSION = "ocli-mpc/1.0"
+SERVER_NAME = os.getenv("MPC_NAME", "GalliviumCloud MPC")
+
+# Capabilities advertised on /status. The client only uses NDJSON token
+# streaming when it sees features.streaming truthy; otherwise it silently falls
+# back to a single non-streamed reply ("legacy (no streaming)"). Model files are
+# managed out-of-band (install_qwythos.sh / ollama / the llama service), so the
+# management features stay off — the client then won't offer Esc-cancel etc.
+FEATURES = {"streaming": True, "cancel": False, "delete": False, "download": False}
 
 HOST = os.getenv("MPC_HOST", "0.0.0.0")
 PORT = int(os.getenv("MPC_PORT", "8799"))
@@ -152,7 +160,8 @@ class Handler(BaseHTTPRequestHandler):
         path = self.path.split("?", 1)[0]
         if path == "/status" or path == "/":
             bk, md = _selected()
-            self._send_json({"ok": True, "version": VERSION,
+            self._send_json({"ok": True, "version": VERSION, "name": SERVER_NAME,
+                             "features": FEATURES,
                              "selected_backend": bk, "selected_model": md})
         elif path == "/models":
             bk, md = _selected()
@@ -162,7 +171,10 @@ class Handler(BaseHTTPRequestHandler):
         elif path == "/downloads":
             self._send_json({"jobs": []})
         elif path.startswith("/downloads/"):
-            self._send_json({"id": path.rsplit("/", 1)[-1], "status": "unsupported", "jobs": []})
+            # The model is served by the upstream — any "download" is already done.
+            self._send_json({"id": path.rsplit("/", 1)[-1], "status": "completed",
+                             "path": UPSTREAM_URL,
+                             "log_tail": "model is served by the upstream; nothing to download"})
         else:
             self._send_json({"error": "not found: " + path}, 404)
 
@@ -179,7 +191,15 @@ class Handler(BaseHTTPRequestHandler):
             with _state_lock:
                 STATE["backend"], STATE["model"] = bk, md
             self._send_json({"selected_backend": bk, "selected_model": md})
-        elif path in ("/download", "/cancel", "/delete"):
+        elif path == "/download":
+            # Model files are managed out-of-band; the requested model is already
+            # served by the upstream. Report a completed job so the client shows a
+            # clean "completed" instead of warning about a missing download job.
+            md = payload.get("model") or _selected()[1]
+            self._send_json({"job_id": "served", "status": "completed",
+                             "model": md, "path": UPSTREAM_URL,
+                             "message": "model is served by the upstream; nothing to download"})
+        elif path in ("/cancel", "/delete"):
             # model management is done out-of-band (install_qwythos.sh / ollama); acknowledge.
             self._send_json({"ok": True, "status": "unsupported",
                              "message": "manage models with install_qwythos.sh or ollama"})
