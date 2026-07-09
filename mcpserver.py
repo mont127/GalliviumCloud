@@ -46,6 +46,11 @@ UPSTREAM_KEY = os.getenv("MPC_UPSTREAM_KEY", "ollama")
 DEFAULT_MODEL = os.getenv("MPC_MODEL", "qwythos")
 DEFAULT_BACKEND = os.getenv("MPC_BACKEND", "llama-cpp")
 MAX_TOKENS = int(os.getenv("MPC_MAX_TOKENS", "4096"))
+# A slow (CPU) upstream can take minutes to emit the first token while it
+# processes a large prompt. Cloudflare quick tunnels drop a request that sends
+# no bytes for ~100s (HTTP 524). While streaming, flush a blank keep-alive line
+# this often so the tunnel stays open; the OCLI client ignores empty lines.
+KEEPALIVE_SECS = int(os.getenv("MPC_KEEPALIVE_SECS", "15"))
 
 _state_lock = threading.Lock()
 STATE = {"backend": DEFAULT_BACKEND, "model": DEFAULT_MODEL}
@@ -241,6 +246,35 @@ class Handler(BaseHTTPRequestHandler):
             self._emit({"type": "error", "error": "upstream error: " + str(e), "retryable": True})
             return
         self._begin_ndjson()
+
+        # Serialize all writes (the keep-alive runs on its own thread) and stop
+        # the heartbeat as soon as real output begins.
+        wlock = threading.Lock()
+        started = threading.Event()
+        stop_ka = threading.Event()
+
+        def emit(event):
+            with wlock:
+                try:
+                    self.wfile.write((json.dumps(event) + "\n").encode("utf-8"))
+                    self.wfile.flush()
+                    return True
+                except Exception:
+                    return False
+
+        def keepalive():
+            while not stop_ka.wait(KEEPALIVE_SECS):
+                if started.is_set():
+                    return
+                with wlock:
+                    try:
+                        self.wfile.write(b"\n")   # blank line: ignored by the client
+                        self.wfile.flush()
+                    except Exception:
+                        return
+        ka = threading.Thread(target=keepalive, daemon=True)
+        ka.start()
+
         in_thought = False
         try:
             for chunk in completion:
@@ -251,25 +285,31 @@ class Handler(BaseHTTPRequestHandler):
                     continue
                 reasoning = getattr(delta, "reasoning_content", None)
                 if reasoning:
+                    started.set()
                     if not in_thought:
-                        if not self._emit({"type": "content", "content": "<thought>"}):
+                        if not emit({"type": "content", "content": "<thought>"}):
                             return
                         in_thought = True
-                    if not self._emit({"type": "content", "content": reasoning}):
+                    if not emit({"type": "content", "content": reasoning}):
                         return
                 text = getattr(delta, "content", None)
                 if text:
+                    started.set()
                     if in_thought:
-                        self._emit({"type": "content", "content": "</thought>\n"})
+                        emit({"type": "content", "content": "</thought>\n"})
                         in_thought = False
-                    if not self._emit({"type": "content", "content": text}):
+                    if not emit({"type": "content", "content": text}):
                         return
             if in_thought:
-                self._emit({"type": "content", "content": "</thought>\n"})
-            self._emit({"type": "metadata", "metadata": {"mpc": True, "upstream": UPSTREAM_URL}})
-            self._emit({"type": "done", "selected_backend": backend, "selected_model": model})
+                emit({"type": "content", "content": "</thought>\n"})
+            emit({"type": "metadata", "metadata": {"mpc": True, "upstream": UPSTREAM_URL}})
+            emit({"type": "done", "selected_backend": backend, "selected_model": model})
         except Exception as e:
-            self._emit({"type": "error", "error": "stream error: " + str(e), "retryable": True})
+            emit({"type": "error", "error": "stream error: " + str(e), "retryable": True})
+        finally:
+            started.set()
+            stop_ka.set()
+            ka.join(timeout=1)
 
 
 def main():
