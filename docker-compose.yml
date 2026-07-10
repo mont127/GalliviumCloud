@@ -45,6 +45,9 @@ services:
       MPC_MODEL: ${MPC_MODEL:-qwythos}
       # Pin a stable token instead of the auto-generated one:
       # MPC_TOKEN: change-me
+      # Optional: publish the live URL+token to Discord on startup. Set the value
+      # in a local .env file (gitignored) as DISCORD_WEBHOOK_URL=...; empty = off.
+      DISCORD_WEBHOOK_URL: ${DISCORD_WEBHOOK_URL:-}
     extra_hosts:
       - "host.docker.internal:host-gateway"   # lets MPC_UPSTREAM_URL reach a host model on Linux
     ports:

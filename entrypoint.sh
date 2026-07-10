@@ -69,6 +69,25 @@ fi
 echo "=================================================================="
 echo ""
 
+# Optionally publish the live URL + token to a Discord channel via an Incoming
+# Webhook. Set DISCORD_WEBHOOK_URL in .env or the environment; it is never
+# printed to the logs and never committed to the repo.
+if [ -n "$URL" ] && [ -n "$READY" ] && [ -n "${DISCORD_WEBHOOK_URL:-}" ]; then
+  echo "[mcp] publishing connection to the Discord webhook..."
+  DISCORD_PAYLOAD="$(U="$URL" T="$MPC_TOKEN" python3 -c 'import json,os
+u=os.environ["U"]; t=os.environ["T"]
+print(json.dumps({
+  "username": "GalliviumCloud MPC",
+  "content": "**OCLI MPC is LIVE**\nConnect from any OCLI:\n```\n/connect "+u+" --token "+t+"\n```"
+}))')"
+  if curl -sf -m 10 -H "Content-Type: application/json" \
+       -d "$DISCORD_PAYLOAD" "$DISCORD_WEBHOOK_URL" >/dev/null 2>&1; then
+    echo "[mcp] posted connection to Discord"
+  else
+    echo "[mcp] Discord post failed (check DISCORD_WEBHOOK_URL)"
+  fi
+fi
+
 # Exit (and let Docker restart) if either process dies.
 wait -n "$MPC_PID" "$CF_PID"
 echo "[mcp] a process exited — shutting down."

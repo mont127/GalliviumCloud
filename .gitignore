@@ -1,3 +1,12 @@
 __pycache__/
 *.pyc
 .DS_Store
+
+# Local secrets — NEVER commit (holds the Discord webhook, tokens, etc.)
+.env
+.env.local
+*.env
+
+# graphify knowledge-graph output
+graphify-out/
+graphify_out/

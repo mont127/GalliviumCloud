@@ -15,6 +15,47 @@ It's two small pieces:
 
 ---
 
+## Set it up on your machine
+
+From nothing to a live server:
+
+1. **Install Docker** — Docker Desktop (macOS/Windows) or Docker Engine + the
+   Compose plugin (Linux). Check with `docker --version` and `docker compose version`.
+
+2. **Get the repo:**
+   ```bash
+   git clone https://github.com/mont127/GalliviumCloud.git
+   cd GalliviumCloud
+   ```
+
+3. **(Optional) Auto-post the connection to Discord.** Each restart mints a fresh
+   URL + token; a webhook drops them into a channel for you:
+   ```bash
+   cp .env.example .env
+   # paste your Discord Incoming Webhook URL into .env:
+   #   DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/...
+   ```
+   `.env` is **gitignored** — the webhook (itself a secret) never enters the repo.
+   Create one in Discord: **Server Settings → Integrations → Webhooks → New
+   Webhook → Copy Webhook URL**.
+
+4. **Start it:**
+   ```bash
+   docker compose up --build
+   ```
+   First boot downloads the Qwythos GGUF (~5.5 GB, cached in a volume). When the
+   tunnel is live it prints — and, if you set the webhook, posts to Discord — a
+   ready-to-paste `/connect …` line.
+
+5. **Connect from LOREA / OCLI** — paste that `/connect <url> --token <token>` line,
+   or use the app's **Connect** panel (⌘K → "Connect to server"). LOREA saves it and
+   **auto-reconnects on next launch**, so you only paste it once.
+
+Stop with `Ctrl-C` (or `docker compose down`). Faster on your own GPU? See
+[Use a model you already run](#use-a-model-you-already-run-faster) below.
+
+---
+
 ## Quick start (self-contained)
 
 ```bash
@@ -78,8 +119,29 @@ an SSH tunnel, a reverse proxy, …) and `/connect` to the resulting URL.
 | `MPC_PORT` | `8799` | port the MPC server listens on |
 | `MPC_MAX_TOKENS` | `4096` | per-reply cap |
 | `LLAMA_CTX` | `32768` | bundled `llama` service context size — must exceed OCLI's ~10k-token system prompt; raise for longer chats (needs more RAM) |
+| `DISCORD_WEBHOOK_URL` | _(empty)_ | if set, posts the live tunnel URL + token to a Discord channel on startup (see below) |
 
 The tunnel is public, so a token is always set (generated if you don't pin one) — keep it secret.
+
+### Publish the connection to Discord (optional)
+
+Every restart mints a fresh tunnel URL and token. To have them dropped into a
+Discord channel automatically on startup, set a webhook:
+
+```bash
+cp .env.example .env
+# edit .env and paste your Discord Incoming Webhook URL:
+#   DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/....
+docker compose up --build
+```
+
+`.env` is **gitignored** — the webhook (which is itself a secret) never lands in
+the repo. `docker compose` reads it automatically. When the tunnel is live, the
+server posts a message containing the ready-to-paste `/connect …` line. Leave the
+value empty (or omit `.env`) to disable.
+
+Create the webhook in Discord: **Server Settings → Integrations → Webhooks → New
+Webhook → Copy Webhook URL**.
 
 ---
 
